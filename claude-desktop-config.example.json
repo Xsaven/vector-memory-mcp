@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "vector-memory": {
+      "command": "/absolute/path/to/vector-memory-mcp/run-arm64.sh",
+      "args": [
+        "--working-dir",
+        "/your/project/path"
+      ]
+    },
+    "vector-memory-alternative": {
+      "command": "/absolute/path/to/miniconda3/envs/vector-mcp/bin/python",
+      "args": [
+        "/absolute/path/to/vector-memory-mcp/main.py",
+        "--working-dir",
+        "/your/project/path"
+      ]
+    }
+  }
+}
