@@ -332,6 +332,58 @@ def create_server() -> FastMCP:
                 "message": str(e)
             }
 
+    @mcp.tool()
+    def delete_by_memory_id(memory_id: int) -> dict[str, Any]:
+        """
+        Delete a specific memory by its unique memory_id.
+
+        This tool permanently removes a memory from both the metadata table
+        and the vector embeddings table. This operation is atomic and cannot
+        be undone.
+
+        Use this when:
+        - Removing outdated or incorrect memories
+        - Deleting sensitive information that should not be retained
+        - Manually managing memory database content
+        - Cleaning up specific memories that are no longer relevant
+
+        Args:
+            memory_id: Unique identifier of the memory to delete
+
+        Returns:
+            Dict with deletion status and confirmation message,
+            or error if memory not found or deletion fails
+        """
+        try:
+            if not isinstance(memory_id, int) or memory_id < 1:
+                return {
+                    "success": False,
+                    "error": "Invalid parameter",
+                    "message": "memory_id must be a positive integer"
+                }
+
+            deleted = memory_store.delete_memory(memory_id)
+
+            if not deleted:
+                return {
+                    "success": False,
+                    "error": "Not found",
+                    "message": f"Memory with ID {memory_id} not found"
+                }
+
+            return {
+                "success": True,
+                "memory_id": memory_id,
+                "message": "Memory deleted successfully from both metadata and vector tables"
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "Deletion failed",
+                "message": str(e)
+            }
+
     return mcp
 
 

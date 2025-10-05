@@ -170,6 +170,24 @@ Clean up old, unused memories:
 Clear memories older than 30 days, keep max 1000 total
 ```
 
+#### 6. `get_by_memory_id` - Retrieve Specific Memory
+Get full details of a specific memory by its ID:
+
+```
+Get memory with ID 123
+```
+
+Returns all fields including content, category, tags, timestamps, access count, and metadata.
+
+#### 7. `delete_by_memory_id` - Delete Memory
+Permanently remove a specific memory from the database:
+
+```
+Delete memory with ID 123
+```
+
+Removes the memory from both metadata and vector tables atomically.
+
 ### Memory Categories
 
 | Category | Use Cases |
@@ -462,15 +480,6 @@ Smart cleanup prioritizes memory retention based on multiple factors:
 3. **Age threshold**: Configurable days_old parameter for hard cutoff
 4. **Count limit**: Maintains max_memories cap by removing least valuable entries
 5. **Scoring system**: Combines access_count and recency for retention decisions
-
-### Internal Methods
-
-Advanced operations available through internal implementation:
-
-- **get_memory_by_id(memory_id)**: Direct memory retrieval by unique ID for internal operations
-- **delete_memory(memory_id)**: Permanently removes specific memory from both metadata and vector tables
-
-These methods support advanced workflows and custom integrations beyond standard MCP tools.
 
 ## 🤝 Contributing
 
