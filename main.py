@@ -244,15 +244,15 @@ def create_server() -> FastMCP:
     ) -> dict[str, Any]:
         """
         Clear old, less frequently accessed memories to free space.
-        
+
         This tool helps maintain database performance by removing older memories
         that haven't been accessed recently. It prioritizes keeping frequently
         accessed and recent memories.
-        
+
         Args:
             days_old: Only consider memories older than this many days (default: 30)
             max_to_keep: Maximum total memories to keep in database (default: 1000)
-        
+
         Returns:
             Dict with cleanup results and statistics
         """
@@ -263,10 +263,10 @@ def create_server() -> FastMCP:
                     "error": "Invalid parameter",
                     "message": "days_old must be at least 1"
                 }
-            
+
             result = memory_store.clear_old_memories(days_old, max_to_keep)
             return result
-            
+
         except SecurityError as e:
             return {
                 "success": False,
@@ -279,7 +279,59 @@ def create_server() -> FastMCP:
                 "error": "Cleanup failed",
                 "message": str(e)
             }
-    
+
+    @mcp.tool()
+    def get_by_memory_id(memory_id: int) -> dict[str, Any]:
+        """
+        Retrieve a specific memory by its unique memory_id.
+
+        This tool allows you to fetch a previously stored memory using its ID,
+        which you might have received from store_memory, search_memories, or
+        list_recent_memories operations.
+
+        Useful for:
+        - Retrieving full details of a specific memory
+        - Verifying memory content after storage
+        - Accessing memories referenced in other operations
+        - Getting metadata and access statistics for a particular memory
+
+        Args:
+            memory_id: Unique identifier of the memory to retrieve
+
+        Returns:
+            Dict with memory details including all fields and metadata,
+            or error message if memory not found
+        """
+        try:
+            if not isinstance(memory_id, int) or memory_id < 1:
+                return {
+                    "success": False,
+                    "error": "Invalid parameter",
+                    "message": "memory_id must be a positive integer"
+                }
+
+            memory = memory_store.get_memory_by_id(memory_id)
+
+            if memory is None:
+                return {
+                    "success": False,
+                    "error": "Not found",
+                    "message": f"Memory with ID {memory_id} not found"
+                }
+
+            return {
+                "success": True,
+                "memory": memory.to_dict(),
+                "message": "Memory retrieved successfully"
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "Retrieval failed",
+                "message": str(e)
+            }
+
     return mcp
 
 
