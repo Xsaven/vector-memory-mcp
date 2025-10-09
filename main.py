@@ -74,25 +74,12 @@ def create_server() -> FastMCP:
         tags: list[str] = None
     ) -> dict[str, Any]:
         """
-        Store a coding memory, experience, or knowledge with automatic vector embedding.
-        
-        Use this to remember:
-        - Code solutions and patterns you've implemented
-        - Bug fixes and debugging approaches
-        - Architecture decisions and rationale
-        - Tool usage and configuration tips
-        - Performance optimizations
-        - Security considerations
-        - Learning insights
-        
+        Store coding memory with vector embedding for semantic search.
+
         Args:
-            content: The memory content (max 10,000 characters)
-            category: Memory category - one of: code-solution, bug-fix, architecture, 
-                     learning, tool-usage, debugging, performance, security, other
-            tags: List of relevant tags for organization (max 10 tags)
-        
-        Returns:
-            Dict with success status, memory_id, and metadata
+            content: Memory content (max 10K chars)
+            category: code-solution, bug-fix, architecture, learning, tool-usage, debugging, performance, security, other
+            tags: Tags for organization (max 10)
         """
         try:
             if tags is None:
@@ -121,23 +108,12 @@ def create_server() -> FastMCP:
         category: str = None
     ) -> dict[str, Any]:
         """
-        Search stored memories using semantic similarity.
-        
-        This performs vector-based semantic search to find memories most relevant
-        to your query, even if they don't contain exact keyword matches.
-        
-        Examples:
-        - "authentication patterns" -> finds JWT, OAuth, login implementations
-        - "async error handling" -> finds Promise, async/await, error catching
-        - "database optimization" -> finds indexing, query performance, caching
-        
+        Search memories using semantic similarity (vector search).
+
         Args:
-            query: Search query describing what you're looking for
-            limit: Maximum number of results to return (1-50, default: 10)
-            category: Optional category filter (code-solution, bug-fix, etc.)
-        
-        Returns:
-            Dict with search results including content, similarity scores, and metadata
+            query: Search query
+            limit: Max results (1-50, default 10)
+            category: Optional category filter
         """
         try:
             search_results = memory_store.search_memories(query, limit, category)
@@ -176,16 +152,10 @@ def create_server() -> FastMCP:
     @mcp.tool()
     def list_recent_memories(limit: int = 10) -> dict[str, Any]:
         """
-        List recently stored memories in chronological order.
-        
-        Useful for reviewing what you've recently learned or stored,
-        and for getting familiar with the type of content in your memory.
-        
+        List recent memories in chronological order.
+
         Args:
-            limit: Maximum number of recent memories to return (1-50, default: 10)
-        
-        Returns:
-            Dict with list of recent memories and their metadata
+            limit: Max results (1-50, default 10)
         """
         try:
             limit = min(max(1, limit), Config.MAX_MEMORIES_PER_SEARCH)
@@ -210,20 +180,7 @@ def create_server() -> FastMCP:
     
     @mcp.tool()
     def get_memory_stats() -> dict[str, Any]:
-        """
-        Get comprehensive statistics about the memory database.
-        
-        Provides insights into:
-        - Total number of stored memories
-        - Memory usage and limits
-        - Category breakdown
-        - Recent activity
-        - Most accessed memories
-        - Database size and health
-        
-        Returns:
-            Dict with detailed statistics and health information
-        """
+        """Get database statistics (total memories, categories, usage, health)."""
         try:
             stats = memory_store.get_stats()
             result = stats.to_dict()
@@ -243,18 +200,11 @@ def create_server() -> FastMCP:
         max_to_keep: int = 1000
     ) -> dict[str, Any]:
         """
-        Clear old, less frequently accessed memories to free space.
-
-        This tool helps maintain database performance by removing older memories
-        that haven't been accessed recently. It prioritizes keeping frequently
-        accessed and recent memories.
+        Clear old memories to free space (keeps frequently accessed).
 
         Args:
-            days_old: Only consider memories older than this many days (default: 30)
-            max_to_keep: Maximum total memories to keep in database (default: 1000)
-
-        Returns:
-            Dict with cleanup results and statistics
+            days_old: Min age in days (default 30)
+            max_to_keep: Max total memories (default 1000)
         """
         try:
             if days_old < 1:
@@ -283,24 +233,10 @@ def create_server() -> FastMCP:
     @mcp.tool()
     def get_by_memory_id(memory_id: int) -> dict[str, Any]:
         """
-        Retrieve a specific memory by its unique memory_id.
-
-        This tool allows you to fetch a previously stored memory using its ID,
-        which you might have received from store_memory, search_memories, or
-        list_recent_memories operations.
-
-        Useful for:
-        - Retrieving full details of a specific memory
-        - Verifying memory content after storage
-        - Accessing memories referenced in other operations
-        - Getting metadata and access statistics for a particular memory
+        Get specific memory by ID.
 
         Args:
-            memory_id: Unique identifier of the memory to retrieve
-
-        Returns:
-            Dict with memory details including all fields and metadata,
-            or error message if memory not found
+            memory_id: Memory ID to retrieve
         """
         try:
             if not isinstance(memory_id, int) or memory_id < 1:
@@ -335,24 +271,10 @@ def create_server() -> FastMCP:
     @mcp.tool()
     def delete_by_memory_id(memory_id: int) -> dict[str, Any]:
         """
-        Delete a specific memory by its unique memory_id.
-
-        This tool permanently removes a memory from both the metadata table
-        and the vector embeddings table. This operation is atomic and cannot
-        be undone.
-
-        Use this when:
-        - Removing outdated or incorrect memories
-        - Deleting sensitive information that should not be retained
-        - Manually managing memory database content
-        - Cleaning up specific memories that are no longer relevant
+        Delete memory by ID (permanent, cannot be undone).
 
         Args:
-            memory_id: Unique identifier of the memory to delete
-
-        Returns:
-            Dict with deletion status and confirmation message,
-            or error if memory not found or deletion fails
+            memory_id: Memory ID to delete
         """
         try:
             if not isinstance(memory_id, int) or memory_id < 1:

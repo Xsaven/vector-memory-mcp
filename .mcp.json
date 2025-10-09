@@ -1,0 +1,36 @@
+{
+  "mspServers": {
+    "web-scout": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@pinkpixel/web-scout-mcp"
+      ]
+    },
+    "context7": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp",
+        "--api-key",
+        "ctx7sk-d066fdcb-bd7e-4e10-acf4-522c7621e2c4"
+      ]
+    },
+    "time": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "mcp-server-time",
+        "--local-timezone=Europe/Kyiv"
+      ]
+    },
+    "fetch": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-fetch"
+      ]
+    }
+  }
+}
