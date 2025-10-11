@@ -1,0 +1,26 @@
+# Include documentation
+include README.md
+include LICENSE
+include CLAUDE.md
+
+# Include configuration examples
+include claude-desktop-config.example.json
+include .mcp.json
+
+# Include scripts
+include run-arm64.sh
+
+# Include requirements
+include requirements.txt
+
+# Include Python version specification
+include .python-version
+
+# Exclude unnecessary files
+exclude .gitignore
+recursive-exclude __pycache__ *
+recursive-exclude .git *
+recursive-exclude .idea *
+recursive-exclude .venv *
+recursive-exclude memory *
+exclude uv.lock

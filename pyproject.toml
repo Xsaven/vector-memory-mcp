@@ -2,13 +2,55 @@
 name = "vector-memory-mcp"
 version = "1.0.0"
 description = "A secure, vector-based memory server for Claude Desktop using sqlite-vec and sentence-transformers"
+readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Xsaven", email = "xsaven@gmail.com" }
+]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "vector-search",
+    "sqlite",
+    "embeddings",
+    "semantic-search",
+    "claude",
+    "ai-memory"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
 dependencies = [
     "mcp>=0.3.0",
     "sqlite-vec>=0.1.6",
     "sentence-transformers>=2.2.2",
 ]
 
+[project.urls]
+Homepage = "https://github.com/xsaven/vector-memory-mcp"
+Repository = "https://github.com/xsaven/vector-memory-mcp"
+Issues = "https://github.com/xsaven/vector-memory-mcp/issues"
+
+[project.scripts]
+vector-memory-mcp = "main:main"
+
 [build-system]
 requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["src"]
+py-modules = ["main"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md"]

@@ -79,6 +79,37 @@ uv --version
 
 ### Installation
 
+#### Option 1: Quick Install via uvx (Recommended)
+
+The easiest way to use this MCP server - no cloning or setup required!
+
+**Once published to PyPI**, you can use it directly:
+
+```bash
+# Run without installation (like npx)
+uvx vector-memory-mcp --working-dir /path/to/your/project
+```
+
+**Claude Desktop Configuration** (using uvx):
+```json
+{
+  "mcpServers": {
+    "vector-memory": {
+      "command": "uvx",
+      "args": [
+        "vector-memory-mcp",
+        "--working-dir",
+        "/absolute/path/to/your/project"
+      ]
+    }
+  }
+}
+```
+
+> **Note**: Publishing to PyPI is in progress. See [PUBLISHING.md](PUBLISHING.md) for details.
+
+#### Option 2: Install from Source (For Development)
+
 1. **Clone the project**:
    ```bash
    git clone <repository-url>
@@ -127,6 +158,28 @@ uv --version
    Important: Use absolute paths, not relative paths.
 
 5. **Restart Claude Desktop** and look for the MCP integration icon.
+
+#### Option 3: Install with pipx (Alternative)
+
+```bash
+# Install globally (once published to PyPI)
+pipx install vector-memory-mcp
+
+# Run
+vector-memory-mcp --working-dir /path/to/your/project
+```
+
+**Claude Desktop Configuration** (using pipx):
+```json
+{
+  "mcpServers": {
+    "vector-memory": {
+      "command": "vector-memory-mcp",
+      "args": ["--working-dir", "/absolute/path/to/your/project"]
+    }
+  }
+}
+```
 
 ## 📚 Usage Guide
 

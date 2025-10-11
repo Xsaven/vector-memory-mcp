@@ -1,18 +1,37 @@
 {
   "mcpServers": {
-    "vector-memory": {
+    "vector-memory-uvx": {
+      "comment": "Recommended: Use uvx - no installation needed, once published to PyPI",
+      "command": "uvx",
+      "args": [
+        "vector-memory-mcp",
+        "--working-dir",
+        "/absolute/path/to/your/project"
+      ]
+    },
+    "vector-memory-pipx": {
+      "comment": "Alternative: Use pipx global installation",
+      "command": "vector-memory-mcp",
+      "args": [
+        "--working-dir",
+        "/absolute/path/to/your/project"
+      ]
+    },
+    "vector-memory-source": {
+      "comment": "Development: Run from source using run-arm64.sh script",
       "command": "/absolute/path/to/vector-memory-mcp/run-arm64.sh",
       "args": [
         "--working-dir",
-        "/your/project/path"
+        "/absolute/path/to/your/project"
       ]
     },
-    "vector-memory-alternative": {
+    "vector-memory-conda": {
+      "comment": "Development: Run from source using conda Python",
       "command": "/absolute/path/to/miniconda3/envs/vector-mcp/bin/python",
       "args": [
         "/absolute/path/to/vector-memory-mcp/main.py",
         "--working-dir",
-        "/your/project/path"
+        "/absolute/path/to/your/project"
       ]
     }
   }

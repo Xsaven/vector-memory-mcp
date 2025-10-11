@@ -53,6 +53,7 @@ memory/*.db-journal
 .env.local
 .env.*.local
 *.env
+.pypirc
 
 # Logs
 *.log
