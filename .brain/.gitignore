@@ -1,0 +1,10 @@
+.idea
+.brain
+vendor
+core
+cli
+memory
+.claude
+.mcp.json
+node/Mcp/*
+composer.lock

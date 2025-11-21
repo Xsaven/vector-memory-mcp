@@ -28,20 +28,22 @@ class VectorMemoryStore:
     Thread-safe vector memory storage using sqlite-vec.
     """
     
-    def __init__(self, db_path: Path, embedding_model_name: str = None):
+    def __init__(self, db_path: Path, embedding_model_name: str = None, memory_limit: int = None):
         """
         Initialize vector memory store.
-        
+
         Args:
             db_path: Path to SQLite database file
             embedding_model_name: Name of embedding model to use
+            memory_limit: Maximum number of memories to store (default from Config)
         """
         self.db_path = Path(db_path)
         self.embedding_model_name = embedding_model_name or Config.EMBEDDING_MODEL
-        
+        self.memory_limit = memory_limit or Config.MAX_TOTAL_MEMORIES
+
         # Validate database path
         validate_file_path(self.db_path)
-        
+
         # Initialize database and embedding model
         self._init_database()
         self.embedding_model = get_embedding_model(self.embedding_model_name)
@@ -140,10 +142,10 @@ class VectorMemoryStore:
             
             # Check memory limit
             count = conn.execute("SELECT COUNT(*) FROM memory_metadata").fetchone()[0]
-            if count >= Config.MAX_TOTAL_MEMORIES:
+            if count >= self.memory_limit:
                 return {
                     "success": False,
-                    "message": f"Memory limit reached ({count}). Use clear_old_memories to free space.",
+                    "message": f"Memory limit reached ({count}/{self.memory_limit}). Use clear_old_memories to free space.",
                     "memory_id": None
                 }
             
@@ -186,19 +188,42 @@ class VectorMemoryStore:
         finally:
             conn.close()
     
-    def search_memories(self, query: str, limit: int = 10, category: Optional[str] = None) -> List[SearchResult]:
+    def search_memories(
+        self,
+        query: str,
+        limit: int = 10,
+        category: Optional[str] = None,
+        offset: int = 0,
+        tags: Optional[List[str]] = None
+    ) -> Tuple[List[SearchResult], int]:
         """
         Search memories using vector similarity.
-        
+
         Args:
             query: Search query
             limit: Maximum number of results
             category: Optional category filter
-            
+            offset: Number of results to skip for pagination (default: 0)
+            tags: Optional list of tags to filter by (matches if ANY tag is present)
+
         Returns:
-            List of SearchResult objects
+            Tuple of (List of SearchResult objects, total count matching filters)
         """
         query, limit, category = validate_search_params(query, limit, category)
+
+        # Validate offset parameter
+        if not isinstance(offset, int) or offset < 0:
+            raise ValueError("offset must be a non-negative integer")
+        if offset > 10000:
+            raise ValueError("offset must not exceed 10000")
+
+        # Validate tags parameter
+        if tags is not None:
+            if not isinstance(tags, list):
+                raise ValueError("tags must be a list of strings")
+            tags = [sanitize_input(str(tag)) for tag in tags if tag]
+            if not tags:
+                tags = None  # Empty list treated as no filter
         
         try:
             conn = self._get_connection()
@@ -212,22 +237,53 @@ class VectorMemoryStore:
             
             # Build search query
             base_query = """
-                SELECT 
+                SELECT
                     m.id, m.content, m.category, m.tags, m.created_at, m.updated_at, m.access_count, m.content_hash,
                     vec_distance_cosine(v.embedding, ?) as distance
                 FROM memory_metadata m
                 JOIN memory_vectors v ON m.id = v.rowid
             """
-            
+
             params = [query_blob]
-            
+            where_clauses = []
+
+            # Add category filter
             if category:
-                base_query += " WHERE m.category = ?"
+                where_clauses.append("m.category = ?")
                 params.append(category)
-            
-            base_query += " ORDER BY distance LIMIT ?"
+
+            # Add tags filter (match if ANY tag is present)
+            if tags:
+                # Build OR conditions for each tag using JSON search
+                tag_conditions = []
+                for tag in tags:
+                    # Use json_each to search within JSON array
+                    tag_conditions.append("EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value = ?)")
+                    params.append(tag)
+                where_clauses.append(f"({' OR '.join(tag_conditions)})")
+
+            # Add WHERE clause if filters exist
+            if where_clauses:
+                base_query += " WHERE " + " AND ".join(where_clauses)
+
+            # Get total count of results matching filters (without limit/offset)
+            count_query = """
+                SELECT COUNT(DISTINCT m.id)
+                FROM memory_metadata m
+                JOIN memory_vectors v ON m.id = v.rowid
+            """
+            if where_clauses:
+                count_query += " WHERE " + " AND ".join(where_clauses)
+
+            # Execute count query with same params (excluding query_blob, limit, offset)
+            count_params = params[1:] if len(params) > 1 else []  # Skip query_blob
+            total_count = conn.execute(count_query, count_params).fetchone()[0]
+
+            # Add ORDER BY, LIMIT, and OFFSET
+            base_query += " ORDER BY distance LIMIT ? OFFSET ?"
             params.append(limit)
-            
+            params.append(offset)
+
             results = conn.execute(base_query, params).fetchall()
             
             # Update access counts for returned memories
@@ -247,17 +303,17 @@ class VectorMemoryStore:
             for row in results:
                 memory = MemoryEntry.from_db_row(row[:-1])  # Exclude distance
                 memory.access_count += 1  # Include current access
-                
+
                 distance = row[-1]
                 similarity = 1 - distance  # Convert distance to similarity
-                
+
                 search_results.append(SearchResult(
                     memory=memory,
                     similarity=similarity,
                     distance=distance
                 ))
-            
-            return search_results
+
+            return (search_results, total_count)
             
         except SecurityError as e:
             raise e
@@ -342,17 +398,17 @@ class VectorMemoryStore:
             """).fetchall()
             
             # Health status
-            usage_pct = (total_memories / Config.MAX_TOTAL_MEMORIES) * 100
+            usage_pct = (total_memories / self.memory_limit) * 100
             if usage_pct < 70:
                 health_status = "Healthy"
             elif usage_pct < 90:
                 health_status = "Monitor - Consider cleanup"
             else:
                 health_status = "Warning - Near limit"
-            
+
             stats = MemoryStats(
                 total_memories=total_memories,
-                memory_limit=Config.MAX_TOTAL_MEMORIES,
+                memory_limit=self.memory_limit,
                 categories=categories,
                 recent_week_count=recent_count,
                 database_size_mb=round(db_size / 1024 / 1024, 2),
@@ -508,5 +564,40 @@ class VectorMemoryStore:
         except Exception as e:
             conn.rollback()
             raise RuntimeError(f"Failed to delete memory: {e}")
+        finally:
+            conn.close()
+
+    def get_unique_tags(self) -> List[str]:
+        """
+        Get all unique tags from the database.
+
+        Returns:
+            List of unique tag strings sorted alphabetically
+        """
+        try:
+            conn = self._get_connection()
+        except Exception as e:
+            raise RuntimeError(f"Failed to get unique tags: {e}")
+
+        try:
+            # Get all tags from memory_metadata
+            results = conn.execute("SELECT tags FROM memory_metadata").fetchall()
+
+            # Collect unique tags
+            unique_tags = set()
+            for row in results:
+                tags_json = row[0]
+                try:
+                    tags_list = json.loads(tags_json)
+                    if isinstance(tags_list, list):
+                        unique_tags.update(tags_list)
+                except json.JSONDecodeError:
+                    continue  # Skip invalid JSON
+
+            # Return sorted list
+            return sorted(list(unique_tags))
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to get unique tags: {e}")
         finally:
             conn.close()

@@ -23,12 +23,12 @@ class MemoryCategory(Enum):
     PERFORMANCE = "performance"
     SECURITY = "security"
     OTHER = "other"
-    
+
     @classmethod
     def list_values(cls) -> List[str]:
         """Get list of all category values"""
         return [category.value for category in cls]
-    
+
     @classmethod
     def is_valid(cls, value: str) -> bool:
         """Check if a value is a valid category"""
@@ -84,13 +84,13 @@ class MemoryEntry:
         )
 
 
-@dataclass  
+@dataclass
 class SearchResult:
     """Represents a search result with similarity scoring"""
     memory: MemoryEntry
     similarity: float
     distance: float
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
         result = self.memory.to_dict()
@@ -111,21 +111,21 @@ class MemoryStats:
     embedding_dimensions: int = 384
     top_accessed: List[Dict[str, Any]] = None
     health_status: str = "Unknown"
-    
+
     def __post_init__(self):
         """Initialize default values"""
         if self.categories is None:
             self.categories = {}
         if self.top_accessed is None:
             self.top_accessed = []
-    
+
     @property
     def usage_percentage(self) -> float:
         """Calculate usage percentage"""
         if self.memory_limit == 0:
             return 0.0
         return round((self.total_memories / self.memory_limit) * 100, 1)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
         return {
@@ -156,7 +156,7 @@ class Config:
     MAX_TOTAL_MEMORIES = 10000
     MAX_TAG_LENGTH = 100
     MAX_TAGS_PER_MEMORY = 10
-    
+
     # Database configuration
     DB_NAME = "vector_memory.db"
     EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"

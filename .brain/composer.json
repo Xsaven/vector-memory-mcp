@@ -1,0 +1,27 @@
+{
+  "name": "jarvis-brain/node",
+  "description": "The Brain Node for Agent Management",
+  "keywords": ["jarvis", "brain", "node"],
+  "type": "project",
+  "version": "v0.0.1",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Xsaven",
+      "email": "xsaven@gmail.com",
+      "role": "Developer/Maintainer"
+    }
+  ],
+  "autoload": {
+    "psr-4": {
+      "BrainNode\\": "node/",
+      "BrainScripts\\": "scripts/"
+    }
+  },
+  "require": {
+    "php": "^8.2",
+    "jarvis-brain/core": "^v0.0.1",
+    "symfony/yaml": "^7.3",
+    "yosymfony/toml": "^1.0"
+  }
+}

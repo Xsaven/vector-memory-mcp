@@ -40,26 +40,50 @@ from src.memory_store import VectorMemoryStore
 
 def get_working_dir() -> Path:
     """Get working directory from command line arguments"""
-    if len(sys.argv) >= 3 and sys.argv[1] == "--working-dir":
-        return validate_working_dir(sys.argv[2])
-    else:
-        # Default to current directory
-        return validate_working_dir(".")
+    if "--working-dir" in sys.argv:
+        idx = sys.argv.index("--working-dir")
+        if idx + 1 < len(sys.argv):
+            return validate_working_dir(sys.argv[idx + 1])
+    # Default to current directory
+    return validate_working_dir(".")
+
+
+def get_memory_limit() -> int:
+    """Get memory limit from command line arguments"""
+    if "--memory-limit" in sys.argv:
+        idx = sys.argv.index("--memory-limit")
+        if idx + 1 < len(sys.argv):
+            try:
+                limit = int(sys.argv[idx + 1])
+                if limit < 1000:
+                    print(f"Warning: memory-limit {limit} is too low, using minimum 1000", file=sys.stderr)
+                    return 1000
+                if limit > 10_000_000:
+                    print(f"Warning: memory-limit {limit} is too high, using maximum 10,000,000", file=sys.stderr)
+                    return 10_000_000
+                return limit
+            except ValueError:
+                print(f"Warning: invalid memory-limit value, using default {Config.MAX_TOTAL_MEMORIES}", file=sys.stderr)
+                return Config.MAX_TOTAL_MEMORIES
+    # Default from config
+    return Config.MAX_TOTAL_MEMORIES
 
 
 def create_server() -> FastMCP:
     """Create and configure the MCP server"""
-    
+
     # Initialize global memory store
     try:
         memory_dir = get_working_dir()
+        memory_limit = get_memory_limit()
         db_path = memory_dir / Config.DB_NAME
-        memory_store = VectorMemoryStore(db_path)
+        memory_store = VectorMemoryStore(db_path, memory_limit=memory_limit)
         print(f"Memory database initialized: {db_path}", file=sys.stderr)
+        print(f"Memory limit: {memory_limit:,} entries", file=sys.stderr)
     except Exception as e:
         print(f"Failed to initialize memory store: {e}", file=sys.stderr)
         sys.exit(1)
-    
+
     # Create FastMCP server
     mcp = FastMCP(Config.SERVER_NAME)
     
@@ -105,7 +129,9 @@ def create_server() -> FastMCP:
     def search_memories(
         query: str,
         limit: int = 10,
-        category: str = None
+        category: str = None,
+        offset: int = 0,
+        tags: list[str] = None
     ) -> dict[str, Any]:
         """
         Search memories using semantic similarity (vector search).
@@ -114,28 +140,33 @@ def create_server() -> FastMCP:
             query: Search query
             limit: Max results (1-50, default 10)
             category: Optional category filter
+            offset: Starting position for results (pagination, 0-based index, default 0)
+            tags: Optional list of tags to filter by (matches memories containing ANY of the specified tags)
         """
         try:
-            search_results = memory_store.search_memories(query, limit, category)
-            
+            search_results, total = memory_store.search_memories(query, limit, category, offset, tags)
+
             if not search_results:
                 return {
                     "success": True,
                     "results": [],
+                    "total": total,
+                    "count": 0,
                     "message": "No matching memories found. Try different keywords or broader terms."
                 }
-            
+
             # Convert SearchResult objects to dictionaries
             results = [result.to_dict() for result in search_results]
-            
+
             return {
                 "success": True,
                 "query": query,
                 "results": results,
+                "total": total,
                 "count": len(results),
-                "message": f"Found {len(results)} relevant memories"
+                "message": f"Show {len(results)} of {total} total memories matching filters"
             }
-            
+
         except SecurityError as e:
             return {
                 "success": False,
@@ -306,6 +337,27 @@ def create_server() -> FastMCP:
                 "message": str(e)
             }
 
+    @mcp.tool()
+    def get_unique_tags() -> dict[str, Any]:
+        """Get all unique tags from memory database."""
+        try:
+            tags = memory_store.get_unique_tags()
+
+            return {
+                "success": True,
+                "tags": tags,
+                "count": len(tags),
+                "message": f"Retrieved {len(tags)} unique tags"
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "Failed to retrieve tags",
+                "message": str(e)
+            }
+
+
     return mcp
 
 
@@ -314,12 +366,14 @@ def main():
     print(f"Starting {Config.SERVER_NAME} v{Config.SERVER_VERSION}", file=sys.stderr)
     
     try:
-        # Get working directory info
+        # Get working directory and config
         memory_dir = get_working_dir()
+        memory_limit = get_memory_limit()
         db_path = memory_dir / Config.DB_NAME
-        
+
         print(f"Working directory: {memory_dir.parent}", file=sys.stderr)
         print(f"Memory database: {db_path}", file=sys.stderr)
+        print(f"Memory limit: {memory_limit:,} entries", file=sys.stderr)
         print(f"Embedding model: {Config.EMBEDDING_MODEL}", file=sys.stderr)
         print("=" * 50, file=sys.stderr)
         

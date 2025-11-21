@@ -151,39 +151,62 @@ def validate_category(category: str) -> str:
         return "other"
 
 
+def validate_comment(comment: str) -> str:
+    """
+    Validate and sanitize task comment.
+
+    Args:
+        comment: Comment string to validate
+
+    Returns:
+        Optional[str]: Sanitized comment or None if empty/invalid
+    """
+    if not isinstance(comment, str):
+        return None
+
+    # Sanitize using existing sanitize_input function
+    # Max length: Config.MAX_MEMORY_LENGTH (10,000 chars - same as content)
+    try:
+        sanitized = sanitize_input(comment, max_length=Config.MAX_MEMORY_LENGTH)
+        return sanitized
+    except SecurityError:
+        # If validation fails, return None (comment is optional)
+        return None
+
+
 def validate_search_params(query: str, limit: int, category: str = None) -> tuple:
     """
     Validate search parameters.
-    
+
     Args:
         query: Search query string
         limit: Maximum results limit
         category: Optional category filter
-        
+
     Returns:
         tuple: (sanitized_query, validated_limit, validated_category)
-        
+
     Raises:
         SecurityError: If validation fails
     """
     # Validate query
     if not isinstance(query, str) or not query.strip():
         raise SecurityError("Search query cannot be empty")
-    
+
     sanitized_query = sanitize_input(query, 1000)  # Reasonable query length
-    
+
     # Validate limit
     if not isinstance(limit, int) or limit < 1:
         limit = 10
     limit = min(limit, Config.MAX_MEMORIES_PER_SEARCH)
-    
+
     # Validate category
     validated_category = None
     if category is not None:
         validated_category = validate_category(category)
         if validated_category == "other" and category != "other":
             validated_category = None  # Invalid category, ignore filter
-    
+
     return sanitized_query, limit, validated_category
 
 
@@ -231,10 +254,10 @@ def generate_content_hash(content: str) -> str:
 def check_resource_limits(current_count: int) -> None:
     """
     Check if resource limits would be exceeded.
-    
+
     Args:
         current_count: Current number of memories in database
-        
+
     Raises:
         SecurityError: If limits would be exceeded
     """
@@ -248,17 +271,17 @@ def check_resource_limits(current_count: int) -> None:
 def validate_file_path(file_path: Path) -> None:
     """
     Validate database file path for security.
-    
+
     Args:
         file_path: Path to validate
-        
+
     Raises:
         SecurityError: If path is unsafe
     """
     # Check file extension
     if file_path.suffix != '.db':
         raise SecurityError("Database file must have .db extension")
-    
+
     # Check path components for directory traversal
     for part in file_path.parts:
         # Block parent directory traversal
@@ -267,11 +290,11 @@ def validate_file_path(file_path: Path) -> None:
         # Block hidden files in filename (last component), but allow hidden directories
         if part == file_path.name and part.startswith('.'):
             raise SecurityError("Hidden database files not allowed")
-    
+
     # Check parent directory exists and is writable
     parent = file_path.parent
     if not parent.exists():
         raise SecurityError("Parent directory does not exist")
-    
+
     if not os.access(parent, os.W_OK):
         raise SecurityError("Parent directory is not writable")

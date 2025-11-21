@@ -6,7 +6,9 @@
       "args": [
         "vector-memory-mcp",
         "--working-dir",
-        "/absolute/path/to/your/project"
+        "/absolute/path/to/your/project",
+        "--memory-limit",
+        "100000"
       ]
     },
     "vector-memory-pipx": {
@@ -14,7 +16,9 @@
       "command": "vector-memory-mcp",
       "args": [
         "--working-dir",
-        "/absolute/path/to/your/project"
+        "/absolute/path/to/your/project",
+        "--memory-limit",
+        "100000"
       ]
     },
     "vector-memory-source": {
@@ -22,14 +26,26 @@
       "command": "/absolute/path/to/vector-memory-mcp/run-arm64.sh",
       "args": [
         "--working-dir",
-        "/absolute/path/to/your/project"
+        "/absolute/path/to/your/project",
+        "--memory-limit",
+        "100000"
       ]
     },
     "vector-memory-conda": {
-      "comment": "Development: Run from source using conda Python",
+      "comment": "Development: Run from source using conda Python with custom memory limit",
       "command": "/absolute/path/to/miniconda3/envs/vector-mcp/bin/python",
       "args": [
         "/absolute/path/to/vector-memory-mcp/main.py",
+        "--working-dir",
+        "/absolute/path/to/your/project",
+        "--memory-limit",
+        "100000"
+      ]
+    },
+    "vector-memory-default": {
+      "comment": "Default configuration (10,000 limit) - omit --memory-limit to use default",
+      "command": "/absolute/path/to/vector-memory-mcp/run-arm64.sh",
+      "args": [
         "--working-dir",
         "/absolute/path/to/your/project"
       ]

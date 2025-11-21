@@ -34,12 +34,23 @@ MCP (Model Context Protocol) Server для векторної пам'яті з �
 # On Apple Silicon (M1/M2/M3) - use run-arm64.sh script
 ./run-arm64.sh --working-dir /your/working/directory
 
+# With custom memory limit (default: 10,000 entries)
+./run-arm64.sh --working-dir /your/working/directory --memory-limit 100000
+
 # Alternative with conda Python (has SQLite extensions support)
-~/miniconda3/envs/vector-mcp/bin/python main.py --working-dir ./
+~/miniconda3/envs/vector-mcp/bin/python main.py --working-dir ./ --memory-limit 100000
 
 # Using uv (requires Python with SQLite extensions support)
-uv run main.py --working-dir ./
+uv run main.py --working-dir ./ --memory-limit 100000
 ```
+
+### Configuration Options
+
+- `--working-dir` - Working directory for memory database (required, default: current directory)
+- `--memory-limit` - Maximum number of memory entries (optional, default: 10,000)
+  - Minimum: 1,000 entries
+  - Maximum: 10,000,000 entries
+  - Recommended for large projects: 100,000-1,000,000
 
 **⚠️ IMPORTANT for macOS Users:**
 - Standard Python from python.org does NOT support SQLite loadable extensions
@@ -55,13 +66,21 @@ uv run main.py --working-dir ./
   "mcpServers": {
     "vector-memory": {
       "command": "/absolute/path/to/run-arm64.sh",
-      "args": ["--working-dir", "/your/project/path"]
+      "args": [
+        "--working-dir",
+        "/your/project/path",
+        "--memory-limit",
+        "100000"
+      ]
     }
   }
 }
 ```
 
-**ВАЖЛИВО:** Використовуй абсолютні шляхи, не відносні!
+**ВАЖЛИВО:**
+- Використовуй абсолютні шляхи, не відносні!
+- `--memory-limit` опціональний, за замовчуванням 10,000
+- Для великих проектів рекомендовано 100,000-1,000,000
 
 ## Database Architecture
 - `memory_metadata` - Метадані спогадів (content, category, tags, timestamps)

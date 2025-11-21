@@ -99,12 +99,16 @@ uvx vector-memory-mcp --working-dir /path/to/your/project
       "args": [
         "vector-memory-mcp",
         "--working-dir",
-        "/absolute/path/to/your/project"
+        "/absolute/path/to/your/project",
+        "--memory-limit",
+        "100000"
       ]
     }
   }
 }
 ```
+
+> **Note:** `--memory-limit` is optional. Omit it to use default 10,000 entries.
 
 > **Note**: Publishing to PyPI is in progress. See [PUBLISHING.md](PUBLISHING.md) for details.
 
@@ -148,14 +152,19 @@ uvx vector-memory-mcp --working-dir /path/to/your/project
            "run",
            "/absolute/path/to/vector-memory-mcp/main.py",
            "--working-dir",
-           "/your/project/path"
+           "/your/project/path",
+           "--memory-limit",
+           "100000"
          ]
        }
      }
    }
    ```
 
-   Important: Use absolute paths, not relative paths.
+   Important:
+   - Use absolute paths, not relative paths
+   - `--memory-limit` is optional (default: 10,000)
+   - For large projects, use 100,000-1,000,000
 
 5. **Restart Claude Desktop** and look for the MCP integration icon.
 
@@ -175,7 +184,12 @@ vector-memory-mcp --working-dir /path/to/your/project
   "mcpServers": {
     "vector-memory": {
       "command": "vector-memory-mcp",
-      "args": ["--working-dir", "/absolute/path/to/your/project"]
+      "args": [
+        "--working-dir",
+        "/absolute/path/to/your/project",
+        "--memory-limit",
+        "100000"
+      ]
     }
   }
 }
@@ -259,15 +273,26 @@ Removes the memory from both metadata and vector tables atomically.
 
 ### Command Line Arguments
 
-The server requires working directory specification:
+The server supports the following arguments:
 
 ```bash
-# Run with uv (recommended)
+# Run with uv (recommended) - default 10,000 memory limit
 uv run main.py --working-dir /path/to/project
 
+# With custom memory limit for large projects
+uv run main.py --working-dir /path/to/project --memory-limit 100000
+
 # Working directory is where memory database will be stored
-uv run main.py --working-dir ~/projects/my-project
+uv run main.py --working-dir ~/projects/my-project --memory-limit 500000
 ```
+
+**Available Options:**
+- `--working-dir` (required): Directory where memory database will be stored
+- `--memory-limit` (optional): Maximum number of memory entries
+  - Default: 10,000 entries
+  - Minimum: 1,000 entries
+  - Maximum: 10,000,000 entries
+  - Recommended for large projects: 100,000-1,000,000
 
 ### Working Directory Structure
 
@@ -282,7 +307,7 @@ your-project/
 ### Security Limits
 
 - **Max memory content**: 10,000 characters
-- **Max total memories**: 10,000 entries
+- **Max total memories**: Configurable via `--memory-limit` (default: 10,000 entries)
 - **Max search results**: 50 per query
 - **Max tags per memory**: 10 tags
 - **Path validation**: Blocks suspicious characters
@@ -356,8 +381,8 @@ The `get_memory_stats` tool provides comprehensive insights:
 ```json
 {
   "total_memories": 247,
-  "memory_limit": 10000,
-  "usage_percentage": 2.5,
+  "memory_limit": 100000,
+  "usage_percentage": 0.25,
   "categories": {
     "code-solution": 89,
     "bug-fix": 67,
@@ -375,7 +400,7 @@ The `get_memory_stats` tool provides comprehensive insights:
 ### Statistics Fields Explained
 
 - **total_memories**: Current number of memories stored in the database
-- **memory_limit**: Maximum allowed memories (default: 10,000)
+- **memory_limit**: Maximum allowed memories (configurable via --memory-limit, default: 10,000)
 - **usage_percentage**: Database capacity usage (total_memories / memory_limit * 100)
 - **categories**: Breakdown of memory count by category type
 - **recent_week_count**: Number of memories created in the last 7 days
