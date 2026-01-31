@@ -4,9 +4,10 @@
 # dependencies = [
 #     "mcp>=0.3.0",
 #     "sqlite-vec>=0.1.6",
-#     "sentence-transformers>=2.2.2"
+#     "sentence-transformers>=2.2.2",
+#     "requests>=2.28.0"
 # ]
-# requires-python = ">=3.8"
+# requires-python = ">=3.10"
 # ///
 
 """
@@ -78,7 +79,7 @@ def create_server() -> FastMCP:
         memory_limit = get_memory_limit()
         db_path = memory_dir / Config.DB_NAME
         memory_store = VectorMemoryStore(db_path, memory_limit=memory_limit)
-        print(f"Memory database initialized: {db_path}", file=sys.stderr)
+        print(f"Memory database path: {db_path} (lazy initialization)", file=sys.stderr)
         print(f"Memory limit: {memory_limit:,} entries", file=sys.stderr)
     except Exception as e:
         print(f"Failed to initialize memory store: {e}", file=sys.stderr)
@@ -92,7 +93,7 @@ def create_server() -> FastMCP:
     # ===============================================================================
     
     @mcp.tool()
-    def store_memory(
+    async def store_memory(
         content: str,
         category: str = "other",
         tags: list[str] = None
@@ -108,10 +109,16 @@ def create_server() -> FastMCP:
         try:
             if tags is None:
                 tags = []
-            
-            result = memory_store.store_memory(content, category, tags)
+
+            # Ensure database is initialized (lazy loading)
+            await memory_store._ensure_db_initialized_async()
+
+            # Get embedding model asynchronously (lazy loading)
+            model = await memory_store.get_embedding_model_async()
+
+            result = memory_store.store_memory(content, category, tags, embedding_model=model)
             return result
-            
+
         except SecurityError as e:
             return {
                 "success": False,
@@ -126,7 +133,7 @@ def create_server() -> FastMCP:
             }
     
     @mcp.tool()
-    def search_memories(
+    async def search_memories(
         query: str,
         limit: int = 10,
         category: str = None,
@@ -144,7 +151,13 @@ def create_server() -> FastMCP:
             tags: Optional list of tags to filter by (matches memories containing ANY of the specified tags)
         """
         try:
-            search_results, total = memory_store.search_memories(query, limit, category, offset, tags)
+            # Ensure database is initialized (lazy loading)
+            await memory_store._ensure_db_initialized_async()
+
+            # Get embedding model asynchronously (lazy loading)
+            model = await memory_store.get_embedding_model_async()
+
+            search_results, total = memory_store.search_memories(query, limit, category, offset, tags, embedding_model=model)
 
             if not search_results:
                 return {
@@ -181,7 +194,7 @@ def create_server() -> FastMCP:
             }
     
     @mcp.tool()
-    def list_recent_memories(limit: int = 10) -> dict[str, Any]:
+    async def list_recent_memories(limit: int = 10) -> dict[str, Any]:
         """
         List recent memories in chronological order.
 
@@ -189,19 +202,22 @@ def create_server() -> FastMCP:
             limit: Max results (1-50, default 10)
         """
         try:
+            # Ensure database is initialized (lazy loading)
+            await memory_store._ensure_db_initialized_async()
+
             limit = min(max(1, limit), Config.MAX_MEMORIES_PER_SEARCH)
             memories = memory_store.get_recent_memories(limit)
-            
+
             # Convert MemoryEntry objects to dictionaries
             memory_dicts = [memory.to_dict() for memory in memories]
-            
+
             return {
                 "success": True,
                 "memories": memory_dicts,
                 "count": len(memory_dicts),
                 "message": f"Retrieved {len(memory_dicts)} recent memories"
             }
-            
+
         except Exception as e:
             return {
                 "success": False,
@@ -210,14 +226,17 @@ def create_server() -> FastMCP:
             }
     
     @mcp.tool()
-    def get_memory_stats() -> dict[str, Any]:
+    async def get_memory_stats() -> dict[str, Any]:
         """Get database statistics (total memories, categories, usage, health)."""
         try:
+            # Ensure database is initialized (lazy loading)
+            await memory_store._ensure_db_initialized_async()
+
             stats = memory_store.get_stats()
             result = stats.to_dict()
             result["success"] = True
             return result
-            
+
         except Exception as e:
             return {
                 "success": False,
@@ -226,7 +245,7 @@ def create_server() -> FastMCP:
             }
     
     @mcp.tool()
-    def clear_old_memories(
+    async def clear_old_memories(
         days_old: int = 30,
         max_to_keep: int = 1000
     ) -> dict[str, Any]:
@@ -245,6 +264,9 @@ def create_server() -> FastMCP:
                     "message": "days_old must be at least 1"
                 }
 
+            # Ensure database is initialized (lazy loading)
+            await memory_store._ensure_db_initialized_async()
+
             result = memory_store.clear_old_memories(days_old, max_to_keep)
             return result
 
@@ -262,7 +284,7 @@ def create_server() -> FastMCP:
             }
 
     @mcp.tool()
-    def get_by_memory_id(memory_id: int) -> dict[str, Any]:
+    async def get_by_memory_id(memory_id: int) -> dict[str, Any]:
         """
         Get specific memory by ID.
 
@@ -276,6 +298,9 @@ def create_server() -> FastMCP:
                     "error": "Invalid parameter",
                     "message": "memory_id must be a positive integer"
                 }
+
+            # Ensure database is initialized (lazy loading)
+            await memory_store._ensure_db_initialized_async()
 
             memory = memory_store.get_memory_by_id(memory_id)
 
@@ -300,7 +325,7 @@ def create_server() -> FastMCP:
             }
 
     @mcp.tool()
-    def delete_by_memory_id(memory_id: int) -> dict[str, Any]:
+    async def delete_by_memory_id(memory_id: int) -> dict[str, Any]:
         """
         Delete memory by ID (permanent, cannot be undone).
 
@@ -314,6 +339,9 @@ def create_server() -> FastMCP:
                     "error": "Invalid parameter",
                     "message": "memory_id must be a positive integer"
                 }
+
+            # Ensure database is initialized (lazy loading)
+            await memory_store._ensure_db_initialized_async()
 
             deleted = memory_store.delete_memory(memory_id)
 
@@ -338,9 +366,12 @@ def create_server() -> FastMCP:
             }
 
     @mcp.tool()
-    def get_unique_tags() -> dict[str, Any]:
+    async def get_unique_tags() -> dict[str, Any]:
         """Get all unique tags from memory database."""
         try:
+            # Ensure database is initialized (lazy loading)
+            await memory_store._ensure_db_initialized_async()
+
             tags = memory_store.get_unique_tags()
 
             return {

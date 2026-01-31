@@ -8,21 +8,9 @@ use BrainCore\Attributes\Meta;
 use BrainCore\Attributes\Purpose;
 use BrainCore\Attributes\Includes;
 use BrainCore\Archetypes\AgentArchetype;
-use BrainCore\Includes\Agent\SkillsUsagePolicy;
-use BrainCore\Includes\Agent\AgentVectorMemory;
-use BrainCore\Includes\Agent\ToolsOnlyExecution;
-use BrainCore\Includes\Agent\DocumentationFirstPolicy;
-use BrainCore\Includes\Agent\AgentCoreIdentity;
-use BrainCore\Includes\Universal\BaseConstraints;
-use BrainCore\Includes\Universal\QualityGates;
-use BrainCore\Includes\Universal\AgentLifecycleFramework;
-use BrainCore\Includes\Universal\SequentialReasoningCapability;
-use BrainCore\Includes\Universal\BrainDocsCommand;
-use BrainCore\Includes\Universal\BrainScriptsCommand;
-use BrainCore\Includes\Universal\VectorMemoryMCP;
+use BrainCore\Variations\Agents\Master;
 
 #[Meta('id', 'python-mcp-master')]
-#[Meta('model', 'sonnet')]
 #[Meta('color', 'purple')]
 #[Meta('description', 'Python MCP server architecture expert. Specializes in FastMCP framework patterns, MCP protocol compliance, tool design, Claude Desktop integration, uv script configuration, and modern Python async patterns for MCP servers.')]
 #[Purpose(<<<'PURPOSE'
@@ -37,28 +25,7 @@ Metadata:
 - specialization: Python MCP servers, FastMCP >= 0.3.0, vector storage, semantic search
 PURPOSE
 )]
-
-// === UNIVERSAL ===
-#[Includes(BaseConstraints::class)]
-#[Includes(QualityGates::class)]
-#[Includes(AgentLifecycleFramework::class)]
-#[Includes(VectorMemoryMCP::class)]
-#[Includes(BrainDocsCommand::class)]
-#[Includes(BrainScriptsCommand::class)]
-
-// === AGENT CORE ===
-#[Includes(AgentCoreIdentity::class)]
-#[Includes(AgentVectorMemory::class)]
-
-// === EXECUTION POLICIES ===
-#[Includes(SkillsUsagePolicy::class)]
-#[Includes(ToolsOnlyExecution::class)]
-
-// === COMPILATION SYSTEM KNOWLEDGE ===
-#[Includes(DocumentationFirstPolicy::class)]
-#[Includes(SequentialReasoningCapability::class)]
-
-// Specialized capabilities (optional, per agent type) (use brain list:includes to see all available includes)
+#[Includes(Master::class)]
 class PythonMcpMaster extends AgentArchetype
 {
     /**

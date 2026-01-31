@@ -1,0 +1,5 @@
+$schema: ../.brain/agent-schema.json
+client: opencode
+description: 
+args:
+  - null

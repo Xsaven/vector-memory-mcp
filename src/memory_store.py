@@ -6,6 +6,7 @@ Provides SQLite-vec based vector storage and retrieval operations.
 Handles database initialization, memory storage, search, and management.
 """
 
+import asyncio
 import sqlite3
 import sqlite_vec
 import json
@@ -20,7 +21,7 @@ from .security import (
     validate_search_params, validate_cleanup_params, generate_content_hash,
     check_resource_limits, validate_file_path
 )
-from .embeddings import get_embedding_model
+from .embeddings import get_embedding_model, EmbeddingModel
 
 
 class VectorMemoryStore:
@@ -44,10 +45,91 @@ class VectorMemoryStore:
         # Validate database path
         validate_file_path(self.db_path)
 
-        # Initialize database and embedding model
-        self._init_database()
-        self.embedding_model = get_embedding_model(self.embedding_model_name)
-    
+        # Lazy-loaded embedding model (async initialization)
+        self._embedding_model: EmbeddingModel | None = None
+        self._model_loading_task: asyncio.Task | None = None
+
+        # Lazy-loaded database initialization (async)
+        self._db_initialized: bool = False
+        self._db_init_task: asyncio.Task | None = None
+
+    async def _ensure_db_initialized_async(self) -> None:
+        """
+        Ensure database is initialized with async lazy loading.
+
+        Creates asyncio.Task on first call for background initialization.
+        All concurrent callers await the SAME task (no duplicate initialization).
+        """
+        if self._db_initialized:
+            return
+
+        if self._db_init_task is None:
+            self._db_init_task = asyncio.create_task(
+                asyncio.to_thread(self._init_database)
+            )
+
+        await self._db_init_task
+        self._db_initialized = True
+
+    def _ensure_db_initialized_sync(self) -> None:
+        """
+        Ensure database is initialized with synchronous loading (fallback for non-async contexts).
+
+        Blocks if database not yet initialized (synchronous fallback).
+        """
+        if not self._db_initialized:
+            self._init_database()
+            self._db_initialized = True
+
+    async def get_embedding_model_async(self) -> EmbeddingModel:
+        """
+        Get embedding model with async lazy loading.
+
+        Returns cached model if already loaded.
+        Creates asyncio.Task on first call for background loading.
+        All concurrent callers await the SAME task (no duplicate loading).
+
+        Returns:
+            EmbeddingModel instance
+        """
+        if self._embedding_model is not None:
+            return self._embedding_model
+
+        if self._model_loading_task is None:
+            self._model_loading_task = asyncio.create_task(
+                asyncio.to_thread(get_embedding_model, self.embedding_model_name)
+            )
+
+        self._embedding_model = await self._model_loading_task
+        return self._embedding_model
+
+    def _get_embedding_model_sync(self) -> EmbeddingModel:
+        """
+        Get embedding model with synchronous loading (fallback for non-async contexts).
+
+        Returns cached model if already loaded.
+        Blocks if model not yet loaded (synchronous fallback).
+
+        Returns:
+            EmbeddingModel instance
+        """
+        if self._embedding_model is None:
+            self._embedding_model = get_embedding_model(self.embedding_model_name)
+        return self._embedding_model
+
+    @property
+    def embedding_model(self) -> EmbeddingModel:
+        """
+        Property for backwards compatibility.
+
+        Provides synchronous access to embedding model.
+        Use get_embedding_model_async() for async contexts.
+
+        Returns:
+            EmbeddingModel instance
+        """
+        return self._get_embedding_model_sync()
+
     def _init_database(self) -> None:
         """Initialize sqlite-vec database with required tables."""
         try:
@@ -101,15 +183,22 @@ class VectorMemoryStore:
         conn.enable_load_extension(False)
         return conn
     
-    def store_memory(self, content: str, category: str, tags: List[str]) -> Dict[str, Any]:
+    def store_memory(
+        self,
+        content: str,
+        category: str,
+        tags: List[str],
+        embedding_model: Optional[EmbeddingModel] = None
+    ) -> Dict[str, Any]:
         """
         Store a new memory with vector embedding.
-        
+
         Args:
             content: Memory content
             category: Memory category
             tags: List of tags
-            
+            embedding_model: Optional pre-loaded embedding model (for async contexts)
+
         Returns:
             Dict with operation result and metadata
         """
@@ -117,7 +206,11 @@ class VectorMemoryStore:
         content = sanitize_input(content)
         category = validate_category(category)
         tags = validate_tags(tags)
-        
+
+        self._ensure_db_initialized_sync()
+        # Use provided model or fall back to sync loading
+        model = embedding_model or self._get_embedding_model_sync()
+
         # Check for duplicates
         content_hash = generate_content_hash(content)
         
@@ -150,7 +243,7 @@ class VectorMemoryStore:
                 }
             
             # Generate embedding
-            embedding = self.embedding_model.encode_single(content)
+            embedding = model.encode_single(content)
             
             # Store metadata
             now = datetime.now(timezone.utc).isoformat()
@@ -194,7 +287,8 @@ class VectorMemoryStore:
         limit: int = 10,
         category: Optional[str] = None,
         offset: int = 0,
-        tags: Optional[List[str]] = None
+        tags: Optional[List[str]] = None,
+        embedding_model: Optional[EmbeddingModel] = None
     ) -> Tuple[List[SearchResult], int]:
         """
         Search memories using vector similarity.
@@ -205,6 +299,7 @@ class VectorMemoryStore:
             category: Optional category filter
             offset: Number of results to skip for pagination (default: 0)
             tags: Optional list of tags to filter by (matches if ANY tag is present)
+            embedding_model: Optional pre-loaded embedding model (for async contexts)
 
         Returns:
             Tuple of (List of SearchResult objects, total count matching filters)
@@ -224,15 +319,19 @@ class VectorMemoryStore:
             tags = [sanitize_input(str(tag)) for tag in tags if tag]
             if not tags:
                 tags = None  # Empty list treated as no filter
-        
+
+        self._ensure_db_initialized_sync()
+        # Use provided model or fall back to sync loading
+        model = embedding_model or self._get_embedding_model_sync()
+
         try:
             conn = self._get_connection()
         except Exception as e:
             raise RuntimeError(f"Failed to store memory: {e}")
-        
+
         try:
             # Generate query embedding
-            query_embedding = self.embedding_model.encode_single(query)
+            query_embedding = model.encode_single(query)
             query_blob = sqlite_vec.serialize_float32(query_embedding)
             
             # Build search query
@@ -325,15 +424,16 @@ class VectorMemoryStore:
     def get_recent_memories(self, limit: int = 10) -> List[MemoryEntry]:
         """
         Get recently stored memories.
-        
+
         Args:
             limit: Maximum number of memories to return
-            
+
         Returns:
             List of MemoryEntry objects
         """
+        self._ensure_db_initialized_sync()
         limit = min(max(1, limit), Config.MAX_MEMORIES_PER_SEARCH)
-        
+
         try:
             conn = self._get_connection()
         except Exception as e:
@@ -358,10 +458,12 @@ class VectorMemoryStore:
     def get_stats(self) -> MemoryStats:
         """
         Get database statistics.
-        
+
         Returns:
             MemoryStats object with comprehensive statistics
         """
+        self._ensure_db_initialized_sync()
+
         try:
             conn = self._get_connection()
         except Exception as e:
@@ -434,18 +536,20 @@ class VectorMemoryStore:
     def clear_old_memories(self, days_old: int = 30, max_to_keep: int = 1000) -> Dict[str, Any]:
         """
         Clear old, less accessed memories.
-        
+
         Args:
             days_old: Minimum age for cleanup candidates
             max_to_keep: Maximum total memories to keep
-            
+
         Returns:
             Dict with cleanup results
         """
         days_old, max_to_keep = validate_cleanup_params(days_old, max_to_keep)
-        
+
+        self._ensure_db_initialized_sync()
+
         cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days_old)).isoformat()
-        
+
         try:
             conn = self._get_connection()
         except Exception as e:
@@ -501,13 +605,15 @@ class VectorMemoryStore:
     def get_memory_by_id(self, memory_id: int) -> Optional[MemoryEntry]:
         """
         Get a specific memory by ID.
-        
+
         Args:
             memory_id: Memory ID to retrieve
-            
+
         Returns:
             MemoryEntry object or None if not found
         """
+        self._ensure_db_initialized_sync()
+
         try:
             conn = self._get_connection()
         except Exception as e:
@@ -532,13 +638,15 @@ class VectorMemoryStore:
     def delete_memory(self, memory_id: int) -> bool:
         """
         Delete a specific memory by ID.
-        
+
         Args:
             memory_id: Memory ID to delete
-            
+
         Returns:
             bool: True if deleted, False if not found
         """
+        self._ensure_db_initialized_sync()
+
         try:
             conn = self._get_connection()
         except Exception as e:
@@ -574,6 +682,8 @@ class VectorMemoryStore:
         Returns:
             List of unique tag strings sorted alphabetically
         """
+        self._ensure_db_initialized_sync()
+
         try:
             conn = self._get_connection()
         except Exception as e:

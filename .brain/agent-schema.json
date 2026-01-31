@@ -1,0 +1,2304 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Brain Agent Configuration",
+    "description": "Configuration schema for Brain AI agent YAML files with advanced DSL support.\n\n## Variable Syntax\n\n### Variable References\n- `$var` or `{$var}` - Reference a variable\n- `$nested.path.value` - Dot notation for nested access\n- `$array.0` - Array index access\n- `$args.name` - Named argument access (requires args_names mapping)\n- `{$pattern.{$args.0}}` - Nested variable interpolation\n\n### Special Prefixes\n- `@file` - Import file content (supports: .json, .yaml, .yml, .env)\n- `!command` - Execute shell command and use output\n- `>php code` - Evaluate PHP expression\n- `\\$var` - Escaped variable (literal $ character)\n\n### File Arguments\n- `@file.json<content` - Import file and replace $ARGUMENTS placeholder with content\n- Content after `<` is processed through variable interpolation\n- Example: `@template.txt<{$user_input}` replaces $ARGUMENTS in template.txt with resolved $user_input\n\n### Command Import\n- `/path:command` - Import compiled Brain command\n- `/path:command args` - Import with $ARGUMENTS replacement\n- Content after space is processed through variable interpolation\n- Example: `/task:validate {$args.0}` imports ValidateCommand and replaces $ARGUMENTS with resolved args\n\nIMPORTANT: Declare `env:` BEFORE keys that use `/command` syntax to ensure env vars are available during compilation.\n\n### Conditional Operators\n- `{$condition ? true_value : false_value}` - Ternary operator\n- `{$a ?? $b}` - Null coalescing (returns $b if $a is null/undefined)\n- `{$a ?: $b}` - Elvis operator (returns $b if $a is falsy)\n- `key?{$condition}` - Conditional key inclusion\n\n### Operator Chaining\n- `{$a ?? $b ?? $c}` - Chained null coalescing\n- `{$a ?: $b ?: $c}` - Chained elvis\n- `{$a ?? ($b ? x : y)}` - Nested operators\n\n## Built-in Variables\n\n### File and Time\n- `_file` - Current file path\n- `_date` - Current date (YYYY-MM-DD)\n- `_datetime` - Current datetime (ISO 8601)\n- `_time` - Current time (HH:MM:SS)\n- `_timestamp` - Unix timestamp\n\n### Context\n- `_call_name` - Name of the calling command\n- `_default_client` - Default AI client from config\n\n### Paths\n- `_path.brain` - Brain directory path\n- `_path.cli` - CLI directory path\n- `_path.home` - User home directory\n- `_path.cwd` - Current working directory\n\n### System Information\n- `_system.uname` - Full uname string\n- `_system.os` - Operating system name\n- `_system.architecture` - System architecture\n- `_system.processor` - Processor type\n- `_system.hostname` - Machine hostname\n- `_system.name` - System name\n- `_system.release` - System release\n- `_system.version` - System version\n\n### User and Environment\n- `_user_name` - Current username\n- `_php_version` - PHP version\n- `_model` - Default model\n- `_model.general` - General purpose model",
+    "$defs": {
+        "ruleArray": {
+            "type": "array",
+            "description": "Array of rule strings to inject into archetype. Rules are constraints that must be followed.",
+            "items": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Rule text. Supports variable interpolation."
+            },
+            "examples": [
+                [
+                    "Always validate input before processing",
+                    "Never expose sensitive data in logs"
+                ]
+            ]
+        },
+        "guidelineArray": {
+            "type": "array",
+            "description": "Array of guideline strings to inject into archetype. Guidelines are recommended practices.",
+            "items": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Guideline text. Supports variable interpolation."
+            },
+            "examples": [
+                [
+                    "Prefer explicit over implicit declarations",
+                    "Document all public methods"
+                ]
+            ]
+        },
+        "archetypeInstructions": {
+            "type": "object",
+            "description": "Instructions to inject into a specific archetype (agent, command, skill, or include).",
+            "properties": {
+                "rule": {
+                    "$ref": "#/$defs/ruleArray"
+                },
+                "guideline": {
+                    "$ref": "#/$defs/guidelineArray"
+                }
+            },
+            "additionalProperties": false
+        },
+        "nestedArchetypeMap": {
+            "type": "object",
+            "description": "Map of archetype IDs to their instruction sets. Keys must be valid identifiers in snake_case.",
+            "patternProperties": {
+                "^[a-z][a-z0-9_]*$": {
+                    "$ref": "#/$defs/archetypeInstructions"
+                }
+            },
+            "additionalProperties": false
+        },
+        "variableValue": {
+            "oneOf": [
+                {
+                    "type": "string"
+                },
+                {
+                    "type": "number"
+                },
+                {
+                    "type": "boolean"
+                }
+            ],
+            "description": "Environment variable value. Supports string, number, or boolean."
+        },
+        "agentReference": {
+            "type": "string",
+            "description": "Reference to a compiled agent. Available agents: agent-master, commit-master, database-master, documentation-master, explore-master, prompt-master, python-mcp-master, script-master, security-audit-master, testing-master, vector-master, web-research-master",
+            "pattern": "^(agent\\-master|commit\\-master|database\\-master|documentation\\-master|explore\\-master|prompt\\-master|python\\-mcp\\-master|script\\-master|security\\-audit\\-master|testing\\-master|vector\\-master|web\\-research\\-master)$",
+            "examples": [
+                "agent-master",
+                "commit-master",
+                "database-master",
+                "documentation-master",
+                "explore-master"
+            ]
+        },
+        "commandReference": {
+            "type": "string",
+            "description": "Reference to a compiled command. Available commands: async-command, sync-command, do-command, work-command, init-agents-command, init-brain-command, init-task-command, init-vector-command, cleanup-command, get-command, list-command, search-command, stats-command, store-command, create-command, decompose-command, list-command, status-command",
+            "pattern": "^(async\\-command|sync\\-command|do\\-command|work\\-command|init\\-agents\\-command|init\\-brain\\-command|init\\-task\\-command|init\\-vector\\-command|cleanup\\-command|get\\-command|list\\-command|search\\-command|stats\\-command|store\\-command|create\\-command|decompose\\-command|list\\-command|status\\-command)$",
+            "examples": [
+                "async-command",
+                "sync-command",
+                "do-command",
+                "work-command",
+                "init-agents-command"
+            ]
+        },
+        "availableModels": {
+            "type": "string",
+            "description": "Available models from all clients: claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5, gpt-5.1-codex-max, gpt-5.1-codex, gpt-5.1-codex-mini, gpt-5.1, gpt-5.2-codex-max, gpt-5.2-codex, gpt-5.2-codex-mini...",
+            "enum": [
+                "claude-opus-4-5",
+                "claude-sonnet-4-5",
+                "claude-haiku-4-5",
+                "gpt-5.1-codex-max",
+                "gpt-5.1-codex",
+                "gpt-5.1-codex-mini",
+                "gpt-5.1",
+                "gpt-5.2-codex-max",
+                "gpt-5.2-codex",
+                "gpt-5.2-codex-mini",
+                "gpt-5.2",
+                "gemini-2.5-pro",
+                "gemini-2.5-flash",
+                "gemini-2.5-flash-lite",
+                "qwen3-coder-plus",
+                "openai/gpt-oss-20b",
+                "qwen/qwen3-coder-30b",
+                "qwen/qwen3-next-80b",
+                "qwen/qwen3-vl-30b",
+                "mistralai/ministral-3-14b-reasoning",
+                "mistralai/devstral-small-2-2512",
+                "openai/gpt-oss-20b:free",
+                "openai/gpt-oss-120b:free",
+                "alibaba/tongyi-deepresearch-30b-a3b:free",
+                "kwaipilot/kat-coder-pro:free",
+                "nex-agi/deepseek-v3.1-nex-n1:free",
+                "qwen/qwen3-coder:free",
+                "amazon/nova-2-lite-v1:free",
+                "arcee-ai/trinity-mini:free",
+                "tngtech/tng-r1t-chimera:free",
+                "z-ai/glm-4.5-air:free",
+                "llama-3.1-8b-instant",
+                "llama-3.3-70b-instant",
+                "meta-llama/llama-guard-4-12b",
+                "openai/gpt-oss-120b",
+                "zai-coding-plan/glm-4.7",
+                "opencode/glm-4.7-free",
+                "opencode/big-pickle",
+                "opencode/grok-code",
+                "openai/gpt-5.2-codex",
+                "openai/gpt-5.2-medium",
+                "anthropic/claude-opus-4-5",
+                "anthropic/claude-sonnet-4-5",
+                "anthropic/claude-haiku-4-5",
+                "lmstudio/qwen/qwen3-coder-30b",
+                "lmstudio/deepseek-coder-v2-lite-instruct",
+                "alibaba/qwen3-coder-480b-a35b-instruct",
+                "google/gemini-3-pro-preview",
+                "google/gemini-3-flash-preview",
+                "github-copilot/claude-sonnet-4.5",
+                "github-copilot/claude-opus-4.5",
+                "github-copilot/claude-haiku-4.5",
+                "github-copilot/gemini-3-flash-preview",
+                "github-copilot/gemini-3-pro-preview",
+                "github-copilot/gpt-5.1-codex",
+                "github-copilot/gpt-5.1-codex-max",
+                "github-copilot/gpt-5.1-codex-mini",
+                "github-copilot/gpt-5.1",
+                "github-copilot/gpt-5.2",
+                "github-copilot/grok-code-fast-1"
+            ]
+        },
+        "builtInVariables": {
+            "type": "object",
+            "description": "Built-in runtime variables available in YAML DSL. Access via $var or {$var} syntax.",
+            "properties": {
+                "$_file": {
+                    "type": "string",
+                    "description": "Current YAML file path"
+                },
+                "$_date": {
+                    "type": "string",
+                    "description": "Current date (YYYY-MM-DD)"
+                },
+                "$_datetime": {
+                    "type": "string",
+                    "description": "Current datetime (YYYY-MM-DD HH:MM:SS)"
+                },
+                "$_time": {
+                    "type": "string",
+                    "description": "Current time (HH:MM:SS)"
+                },
+                "$_timestamp": {
+                    "type": "string",
+                    "description": "Unix timestamp"
+                },
+                "$_call_name": {
+                    "type": "string",
+                    "description": "Name of the calling command"
+                },
+                "$_default_client": {
+                    "type": "string",
+                    "description": "Default AI client from config"
+                },
+                "$_path.brain": {
+                    "type": "string",
+                    "description": "Brain working directory path"
+                },
+                "$_path.cli": {
+                    "type": "string",
+                    "description": "CLI local directory path"
+                },
+                "$_path.home": {
+                    "type": "string",
+                    "description": "User home directory path"
+                },
+                "$_path.cwd": {
+                    "type": "string",
+                    "description": "Current working directory path"
+                },
+                "$_system.uname": {
+                    "type": "string",
+                    "description": "Full uname string"
+                },
+                "$_system.os": {
+                    "type": "string",
+                    "description": "Operating system name (PHP_OS_FAMILY)"
+                },
+                "$_system.architecture": {
+                    "type": "string",
+                    "description": "System architecture"
+                },
+                "$_system.processor": {
+                    "type": "string",
+                    "description": "Processor type"
+                },
+                "$_system.hostname": {
+                    "type": "string",
+                    "description": "Machine hostname"
+                },
+                "$_system.name": {
+                    "type": "string",
+                    "description": "System name"
+                },
+                "$_system.release": {
+                    "type": "string",
+                    "description": "System release"
+                },
+                "$_system.version": {
+                    "type": "string",
+                    "description": "System version"
+                },
+                "$_user_name": {
+                    "type": "string",
+                    "description": "Current username"
+                },
+                "$_php_version": {
+                    "type": "string",
+                    "description": "PHP version"
+                },
+                "$_model": {
+                    "type": "string",
+                    "description": "Associative array of all models (NAME => value)"
+                },
+                "$_model.general": {
+                    "type": "string",
+                    "description": "General purpose model for current agent"
+                },
+                "$_model.OPUS": {
+                    "type": "string",
+                    "description": "Model constant: OPUS (OpenCode CLI)"
+                },
+                "$_model.SONNET": {
+                    "type": "string",
+                    "description": "Model constant: SONNET (OpenCode CLI)"
+                },
+                "$_model.HAIKU": {
+                    "type": "string",
+                    "description": "Model constant: HAIKU (OpenCode CLI)"
+                },
+                "$_model.GPT51_CODEX_MAX": {
+                    "type": "string",
+                    "description": "Model constant: GPT51_CODEX_MAX (Codex CLI)"
+                },
+                "$_model.GPT51_CODEX": {
+                    "type": "string",
+                    "description": "Model constant: GPT51_CODEX (Codex CLI)"
+                },
+                "$_model.GPT51_CODEX_MINI": {
+                    "type": "string",
+                    "description": "Model constant: GPT51_CODEX_MINI (Codex CLI)"
+                },
+                "$_model.GPT51": {
+                    "type": "string",
+                    "description": "Model constant: GPT51 (Codex CLI)"
+                },
+                "$_model.GPT52_CODEX_MAX": {
+                    "type": "string",
+                    "description": "Model constant: GPT52_CODEX_MAX (Codex CLI)"
+                },
+                "$_model.GPT52_CODEX": {
+                    "type": "string",
+                    "description": "Model constant: GPT52_CODEX (OpenCode CLI)"
+                },
+                "$_model.GPT52_CODEX_MINI": {
+                    "type": "string",
+                    "description": "Model constant: GPT52_CODEX_MINI (Codex CLI)"
+                },
+                "$_model.GPT52": {
+                    "type": "string",
+                    "description": "Model constant: GPT52 (OpenCode CLI)"
+                },
+                "$_model.PRO": {
+                    "type": "string",
+                    "description": "Model constant: PRO (Gemini CLI)"
+                },
+                "$_model.FLASH": {
+                    "type": "string",
+                    "description": "Model constant: FLASH (Gemini CLI)"
+                },
+                "$_model.FLASH_LITE": {
+                    "type": "string",
+                    "description": "Model constant: FLASH_LITE (Gemini CLI)"
+                },
+                "$_model.CODER": {
+                    "type": "string",
+                    "description": "Model constant: CODER (Qwen CLI)"
+                },
+                "$_model.GPT_OSS_20": {
+                    "type": "string",
+                    "description": "Model constant: GPT_OSS_20 (OpenRouter CLI)"
+                },
+                "$_model.QWEN3_CODER_30": {
+                    "type": "string",
+                    "description": "Model constant: QWEN3_CODER_30 (OpenRouter CLI)"
+                },
+                "$_model.QWEN3_NEXT_80": {
+                    "type": "string",
+                    "description": "Model constant: QWEN3_NEXT_80 (LM Studio)"
+                },
+                "$_model.QWEN3_VL_30": {
+                    "type": "string",
+                    "description": "Model constant: QWEN3_VL_30 (LM Studio)"
+                },
+                "$_model.MINISTRAL3_14": {
+                    "type": "string",
+                    "description": "Model constant: MINISTRAL3_14 (LM Studio)"
+                },
+                "$_model.DEVSTRAL_SMALL_2": {
+                    "type": "string",
+                    "description": "Model constant: DEVSTRAL_SMALL_2 (LM Studio)"
+                },
+                "$_model.GPT_OSS_120": {
+                    "type": "string",
+                    "description": "Model constant: GPT_OSS_120 (OpenRouter CLI)"
+                },
+                "$_model.TONGYI_DEEPRESEARCH_30": {
+                    "type": "string",
+                    "description": "Model constant: TONGYI_DEEPRESEARCH_30 (OpenRouter CLI)"
+                },
+                "$_model.KAT_CODER_PRO": {
+                    "type": "string",
+                    "description": "Model constant: KAT_CODER_PRO (OpenRouter CLI)"
+                },
+                "$_model.DEEPSEEK_V3_1_NEX_N1": {
+                    "type": "string",
+                    "description": "Model constant: DEEPSEEK_V3_1_NEX_N1 (OpenRouter CLI)"
+                },
+                "$_model.NOVA_2_LITE_V1": {
+                    "type": "string",
+                    "description": "Model constant: NOVA_2_LITE_V1 (OpenRouter CLI)"
+                },
+                "$_model.TRINITY_MINI": {
+                    "type": "string",
+                    "description": "Model constant: TRINITY_MINI (OpenRouter CLI)"
+                },
+                "$_model.TNG_R1T_CHIMERA": {
+                    "type": "string",
+                    "description": "Model constant: TNG_R1T_CHIMERA (OpenRouter CLI)"
+                },
+                "$_model.GLM_4_5_AIR": {
+                    "type": "string",
+                    "description": "Model constant: GLM_4_5_AIR (OpenRouter CLI)"
+                },
+                "$_model.LLAMA_3_1_8B": {
+                    "type": "string",
+                    "description": "Model constant: LLAMA_3_1_8B (Groq CLI)"
+                },
+                "$_model.LLAMA_3_3_70B": {
+                    "type": "string",
+                    "description": "Model constant: LLAMA_3_3_70B (Groq CLI)"
+                },
+                "$_model.META_LLAMA_GUARD_4_12B": {
+                    "type": "string",
+                    "description": "Model constant: META_LLAMA_GUARD_4_12B (Groq CLI)"
+                },
+                "$_model.OPENAI_GPT_OSS_120B": {
+                    "type": "string",
+                    "description": "Model constant: OPENAI_GPT_OSS_120B (Groq CLI)"
+                },
+                "$_model.OPENAI_GPT_OSS_20B": {
+                    "type": "string",
+                    "description": "Model constant: OPENAI_GPT_OSS_20B (Groq CLI)"
+                },
+                "$_model.GLM47": {
+                    "type": "string",
+                    "description": "Model constant: GLM47 (OpenCode CLI)"
+                },
+                "$_model.GLM47_FREE": {
+                    "type": "string",
+                    "description": "Model constant: GLM47_FREE (OpenCode CLI)"
+                },
+                "$_model.BIG_PICKLE_FREE": {
+                    "type": "string",
+                    "description": "Model constant: BIG_PICKLE_FREE (OpenCode CLI)"
+                },
+                "$_model.GROK_CODE_FREE": {
+                    "type": "string",
+                    "description": "Model constant: GROK_CODE_FREE (OpenCode CLI)"
+                },
+                "$_model.Q3CP": {
+                    "type": "string",
+                    "description": "Model constant: Q3CP (OpenCode CLI)"
+                },
+                "$_model.DSCV2LI": {
+                    "type": "string",
+                    "description": "Model constant: DSCV2LI (OpenCode CLI)"
+                },
+                "$_model.QWEN3_CODER": {
+                    "type": "string",
+                    "description": "Model constant: QWEN3_CODER (OpenCode CLI)"
+                },
+                "$_model.GO_GEMINI3_PRO": {
+                    "type": "string",
+                    "description": "Model constant: GO_GEMINI3_PRO (OpenCode CLI)"
+                },
+                "$_model.GO_GEMINI3_FLASH": {
+                    "type": "string",
+                    "description": "Model constant: GO_GEMINI3_FLASH (OpenCode CLI)"
+                },
+                "$_model.GH_SONNET": {
+                    "type": "string",
+                    "description": "Model constant: GH_SONNET (OpenCode CLI)"
+                },
+                "$_model.GH_OPUS": {
+                    "type": "string",
+                    "description": "Model constant: GH_OPUS (OpenCode CLI)"
+                },
+                "$_model.GH_HAIKU": {
+                    "type": "string",
+                    "description": "Model constant: GH_HAIKU (OpenCode CLI)"
+                },
+                "$_model.GH_GEMINI3_FLASH": {
+                    "type": "string",
+                    "description": "Model constant: GH_GEMINI3_FLASH (OpenCode CLI)"
+                },
+                "$_model.GH_GEMINI3_PRO": {
+                    "type": "string",
+                    "description": "Model constant: GH_GEMINI3_PRO (OpenCode CLI)"
+                },
+                "$_model.GH_GPT51_CODEX": {
+                    "type": "string",
+                    "description": "Model constant: GH_GPT51_CODEX (OpenCode CLI)"
+                },
+                "$_model.GH_GPT51_CODEX_MAX": {
+                    "type": "string",
+                    "description": "Model constant: GH_GPT51_CODEX_MAX (OpenCode CLI)"
+                },
+                "$_model.GH_GPT51_CODEX_MINI": {
+                    "type": "string",
+                    "description": "Model constant: GH_GPT51_CODEX_MINI (OpenCode CLI)"
+                },
+                "$_model.GH_GPT51": {
+                    "type": "string",
+                    "description": "Model constant: GH_GPT51 (OpenCode CLI)"
+                },
+                "$_model.GH_GPT52": {
+                    "type": "string",
+                    "description": "Model constant: GH_GPT52 (OpenCode CLI)"
+                },
+                "$_model.GH_GROK": {
+                    "type": "string",
+                    "description": "Model constant: GH_GROK (OpenCode CLI)"
+                }
+            },
+            "examples": [
+                "$_file",
+                "$_date",
+                "$_datetime",
+                "$_time",
+                "$_timestamp",
+                "$_call_name",
+                "$_default_client",
+                "$_path.brain",
+                "$_path.cli",
+                "$_path.home",
+                "$_path.cwd",
+                "$_system.uname",
+                "$_system.os",
+                "$_system.architecture",
+                "$_system.processor",
+                "$_system.hostname",
+                "$_system.name",
+                "$_system.release",
+                "$_system.version",
+                "$_user_name",
+                "$_php_version",
+                "$_model",
+                "$_model.general",
+                "$_model.OPUS",
+                "$_model.SONNET",
+                "$_model.HAIKU",
+                "$_model.GPT51_CODEX_MAX",
+                "$_model.GPT51_CODEX",
+                "$_model.GPT51_CODEX_MINI",
+                "$_model.GPT51",
+                "$_model.GPT52_CODEX_MAX",
+                "$_model.GPT52_CODEX",
+                "$_model.GPT52_CODEX_MINI",
+                "$_model.GPT52",
+                "$_model.PRO",
+                "$_model.FLASH",
+                "$_model.FLASH_LITE",
+                "$_model.CODER",
+                "$_model.GPT_OSS_20",
+                "$_model.QWEN3_CODER_30",
+                "$_model.QWEN3_NEXT_80",
+                "$_model.QWEN3_VL_30",
+                "$_model.MINISTRAL3_14",
+                "$_model.DEVSTRAL_SMALL_2",
+                "$_model.GPT_OSS_120",
+                "$_model.TONGYI_DEEPRESEARCH_30",
+                "$_model.KAT_CODER_PRO",
+                "$_model.DEEPSEEK_V3_1_NEX_N1",
+                "$_model.NOVA_2_LITE_V1",
+                "$_model.TRINITY_MINI",
+                "$_model.TNG_R1T_CHIMERA",
+                "$_model.GLM_4_5_AIR",
+                "$_model.LLAMA_3_1_8B",
+                "$_model.LLAMA_3_3_70B",
+                "$_model.META_LLAMA_GUARD_4_12B",
+                "$_model.OPENAI_GPT_OSS_120B",
+                "$_model.OPENAI_GPT_OSS_20B",
+                "$_model.GLM47",
+                "$_model.GLM47_FREE",
+                "$_model.BIG_PICKLE_FREE",
+                "$_model.GROK_CODE_FREE",
+                "$_model.Q3CP",
+                "$_model.DSCV2LI",
+                "$_model.QWEN3_CODER",
+                "$_model.GO_GEMINI3_PRO",
+                "$_model.GO_GEMINI3_FLASH",
+                "$_model.GH_SONNET",
+                "$_model.GH_OPUS",
+                "$_model.GH_HAIKU",
+                "$_model.GH_GEMINI3_FLASH",
+                "$_model.GH_GEMINI3_PRO",
+                "$_model.GH_GPT51_CODEX",
+                "$_model.GH_GPT51_CODEX_MAX",
+                "$_model.GH_GPT51_CODEX_MINI",
+                "$_model.GH_GPT51",
+                "$_model.GH_GPT52",
+                "$_model.GH_GROK"
+            ]
+        },
+        "builtInVariableNames": {
+            "type": "string",
+            "description": "Available built-in variable names for autocomplete",
+            "enum": [
+                "$_file",
+                "$_date",
+                "$_datetime",
+                "$_time",
+                "$_timestamp",
+                "$_call_name",
+                "$_default_client",
+                "$_path.brain",
+                "$_path.cli",
+                "$_path.home",
+                "$_path.cwd",
+                "$_system.uname",
+                "$_system.os",
+                "$_system.architecture",
+                "$_system.processor",
+                "$_system.hostname",
+                "$_system.name",
+                "$_system.release",
+                "$_system.version",
+                "$_user_name",
+                "$_php_version",
+                "$_model",
+                "$_model.general",
+                "$_model.OPUS",
+                "$_model.SONNET",
+                "$_model.HAIKU",
+                "$_model.GPT51_CODEX_MAX",
+                "$_model.GPT51_CODEX",
+                "$_model.GPT51_CODEX_MINI",
+                "$_model.GPT51",
+                "$_model.GPT52_CODEX_MAX",
+                "$_model.GPT52_CODEX",
+                "$_model.GPT52_CODEX_MINI",
+                "$_model.GPT52",
+                "$_model.PRO",
+                "$_model.FLASH",
+                "$_model.FLASH_LITE",
+                "$_model.CODER",
+                "$_model.GPT_OSS_20",
+                "$_model.QWEN3_CODER_30",
+                "$_model.QWEN3_NEXT_80",
+                "$_model.QWEN3_VL_30",
+                "$_model.MINISTRAL3_14",
+                "$_model.DEVSTRAL_SMALL_2",
+                "$_model.GPT_OSS_120",
+                "$_model.TONGYI_DEEPRESEARCH_30",
+                "$_model.KAT_CODER_PRO",
+                "$_model.DEEPSEEK_V3_1_NEX_N1",
+                "$_model.NOVA_2_LITE_V1",
+                "$_model.TRINITY_MINI",
+                "$_model.TNG_R1T_CHIMERA",
+                "$_model.GLM_4_5_AIR",
+                "$_model.LLAMA_3_1_8B",
+                "$_model.LLAMA_3_3_70B",
+                "$_model.META_LLAMA_GUARD_4_12B",
+                "$_model.OPENAI_GPT_OSS_120B",
+                "$_model.OPENAI_GPT_OSS_20B",
+                "$_model.GLM47",
+                "$_model.GLM47_FREE",
+                "$_model.BIG_PICKLE_FREE",
+                "$_model.GROK_CODE_FREE",
+                "$_model.Q3CP",
+                "$_model.DSCV2LI",
+                "$_model.QWEN3_CODER",
+                "$_model.GO_GEMINI3_PRO",
+                "$_model.GO_GEMINI3_FLASH",
+                "$_model.GH_SONNET",
+                "$_model.GH_OPUS",
+                "$_model.GH_HAIKU",
+                "$_model.GH_GEMINI3_FLASH",
+                "$_model.GH_GEMINI3_PRO",
+                "$_model.GH_GPT51_CODEX",
+                "$_model.GH_GPT51_CODEX_MAX",
+                "$_model.GH_GPT51_CODEX_MINI",
+                "$_model.GH_GPT51",
+                "$_model.GH_GPT52",
+                "$_model.GH_GROK"
+            ]
+        },
+        "envVariables": {
+            "type": "object",
+            "description": "Environment variables for .brain/.env file. Configure rules, guidelines, models, and disable flags per archetype.",
+            "properties": {
+                "AGENTS_AGENT_MASTER_DISABLE": {
+                    "type": "string",
+                    "description": "Disable AgentMaster from compilation (true/false)"
+                },
+                "AGENTS_COMMIT_MASTER_DISABLE": {
+                    "type": "string",
+                    "description": "Disable CommitMaster from compilation (true/false)"
+                },
+                "AGENTS_DATABASE_MASTER_DISABLE": {
+                    "type": "string",
+                    "description": "Disable DatabaseMaster from compilation (true/false)"
+                },
+                "AGENTS_DOCUMENTATION_MASTER_DISABLE": {
+                    "type": "string",
+                    "description": "Disable DocumentationMaster from compilation (true/false)"
+                },
+                "AGENTS_EXPLORE_MASTER_DISABLE": {
+                    "type": "string",
+                    "description": "Disable ExploreMaster from compilation (true/false)"
+                },
+                "AGENTS_PROMPT_MASTER_DISABLE": {
+                    "type": "string",
+                    "description": "Disable PromptMaster from compilation (true/false)"
+                },
+                "AGENTS_PYTHON_MCP_MASTER_DISABLE": {
+                    "type": "string",
+                    "description": "Disable PythonMcpMaster from compilation (true/false)"
+                },
+                "AGENTS_SCRIPT_MASTER_DISABLE": {
+                    "type": "string",
+                    "description": "Disable ScriptMaster from compilation (true/false)"
+                },
+                "AGENTS_SECURITY_AUDIT_MASTER_DISABLE": {
+                    "type": "string",
+                    "description": "Disable SecurityAuditMaster from compilation (true/false)"
+                },
+                "AGENTS_TESTING_MASTER_DISABLE": {
+                    "type": "string",
+                    "description": "Disable TestingMaster from compilation (true/false)"
+                },
+                "AGENTS_VECTOR_MASTER_DISABLE": {
+                    "type": "string",
+                    "description": "Disable VectorMaster from compilation (true/false)"
+                },
+                "AGENTS_WEB_RESEARCH_MASTER_DISABLE": {
+                    "type": "string",
+                    "description": "Disable WebResearchMaster from compilation (true/false)"
+                },
+                "AGENT_MASTER_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for AgentMaster"
+                },
+                "AGENT_MASTER_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for AgentMaster"
+                },
+                "AGENT_MASTER_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for AgentMaster"
+                },
+                "AGENT_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Model override for AgentMaster"
+                },
+                "AGENT_MASTER_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for AgentMaster"
+                },
+                "AGENT_MASTER_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for AgentMaster"
+                },
+                "AGENT_MASTER_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for AgentMaster"
+                },
+                "ASYNC_COMMAND_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for AsyncCommand"
+                },
+                "ASYNC_COMMAND_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for AsyncCommand"
+                },
+                "ASYNC_COMMAND_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for AsyncCommand"
+                },
+                "ASYNC_COMMAND_MODEL": {
+                    "type": "string",
+                    "description": "Model override for AsyncCommand"
+                },
+                "ASYNC_COMMAND_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for AsyncCommand"
+                },
+                "ASYNC_COMMAND_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for AsyncCommand"
+                },
+                "ASYNC_COMMAND_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for AsyncCommand"
+                },
+                "BRAIN_DISABLE": {
+                    "type": "string",
+                    "description": "Disable Brain compilation (true/false)"
+                },
+                "BRAIN_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for Brain"
+                },
+                "BRAIN_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for Brain"
+                },
+                "BRAIN_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for Brain"
+                },
+                "BRAIN_MODEL": {
+                    "type": "string",
+                    "description": "Model override for Brain"
+                },
+                "BRAIN_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for Brain"
+                },
+                "BRAIN_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for Brain"
+                },
+                "BRAIN_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for Brain"
+                },
+                "CLAUDE_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Default model for Claude Code agents"
+                },
+                "CLEANUP_COMMAND_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for CleanupCommand"
+                },
+                "CLEANUP_COMMAND_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for CleanupCommand"
+                },
+                "CLEANUP_COMMAND_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for CleanupCommand"
+                },
+                "CLEANUP_COMMAND_MODEL": {
+                    "type": "string",
+                    "description": "Model override for CleanupCommand"
+                },
+                "CLEANUP_COMMAND_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for CleanupCommand"
+                },
+                "CLEANUP_COMMAND_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for CleanupCommand"
+                },
+                "CLEANUP_COMMAND_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for CleanupCommand"
+                },
+                "CODEX_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Default model for Codex CLI agents"
+                },
+                "COMMANDS_ASYNC_COMMAND_DISABLE": {
+                    "type": "string",
+                    "description": "Disable AsyncCommand from compilation (true/false)"
+                },
+                "COMMANDS_CLEANUP_COMMAND_DISABLE": {
+                    "type": "string",
+                    "description": "Disable CleanupCommand from compilation (true/false)"
+                },
+                "COMMANDS_CREATE_COMMAND_DISABLE": {
+                    "type": "string",
+                    "description": "Disable CreateCommand from compilation (true/false)"
+                },
+                "COMMANDS_DECOMPOSE_COMMAND_DISABLE": {
+                    "type": "string",
+                    "description": "Disable DecomposeCommand from compilation (true/false)"
+                },
+                "COMMANDS_DO_COMMAND_DISABLE": {
+                    "type": "string",
+                    "description": "Disable DoCommand from compilation (true/false)"
+                },
+                "COMMANDS_GET_COMMAND_DISABLE": {
+                    "type": "string",
+                    "description": "Disable GetCommand from compilation (true/false)"
+                },
+                "COMMANDS_INIT_AGENTS_COMMAND_DISABLE": {
+                    "type": "string",
+                    "description": "Disable InitAgentsCommand from compilation (true/false)"
+                },
+                "COMMANDS_INIT_BRAIN_COMMAND_DISABLE": {
+                    "type": "string",
+                    "description": "Disable InitBrainCommand from compilation (true/false)"
+                },
+                "COMMANDS_INIT_TASK_COMMAND_DISABLE": {
+                    "type": "string",
+                    "description": "Disable InitTaskCommand from compilation (true/false)"
+                },
+                "COMMANDS_INIT_VECTOR_COMMAND_DISABLE": {
+                    "type": "string",
+                    "description": "Disable InitVectorCommand from compilation (true/false)"
+                },
+                "COMMANDS_LIST_COMMAND_DISABLE": {
+                    "type": "string",
+                    "description": "Disable ListCommand from compilation (true/false)"
+                },
+                "COMMANDS_SEARCH_COMMAND_DISABLE": {
+                    "type": "string",
+                    "description": "Disable SearchCommand from compilation (true/false)"
+                },
+                "COMMANDS_STATS_COMMAND_DISABLE": {
+                    "type": "string",
+                    "description": "Disable StatsCommand from compilation (true/false)"
+                },
+                "COMMANDS_STATUS_COMMAND_DISABLE": {
+                    "type": "string",
+                    "description": "Disable StatusCommand from compilation (true/false)"
+                },
+                "COMMANDS_STORE_COMMAND_DISABLE": {
+                    "type": "string",
+                    "description": "Disable StoreCommand from compilation (true/false)"
+                },
+                "COMMANDS_SYNC_COMMAND_DISABLE": {
+                    "type": "string",
+                    "description": "Disable SyncCommand from compilation (true/false)"
+                },
+                "COMMANDS_WORK_COMMAND_DISABLE": {
+                    "type": "string",
+                    "description": "Disable WorkCommand from compilation (true/false)"
+                },
+                "COMMIT_MASTER_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for CommitMaster"
+                },
+                "COMMIT_MASTER_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for CommitMaster"
+                },
+                "COMMIT_MASTER_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for CommitMaster"
+                },
+                "COMMIT_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Model override for CommitMaster"
+                },
+                "COMMIT_MASTER_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for CommitMaster"
+                },
+                "COMMIT_MASTER_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for CommitMaster"
+                },
+                "COMMIT_MASTER_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for CommitMaster"
+                },
+                "CONTEXT7_MCP_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for Context7Mcp"
+                },
+                "CONTEXT7_MCP_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for Context7Mcp"
+                },
+                "CONTEXT7_MCP_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for Context7Mcp"
+                },
+                "CONTEXT7_MCP_MODEL": {
+                    "type": "string",
+                    "description": "Model override for Context7Mcp"
+                },
+                "CONTEXT7_MCP_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for Context7Mcp"
+                },
+                "CONTEXT7_MCP_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for Context7Mcp"
+                },
+                "CONTEXT7_MCP_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for Context7Mcp"
+                },
+                "CREATE_COMMAND_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for CreateCommand"
+                },
+                "CREATE_COMMAND_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for CreateCommand"
+                },
+                "CREATE_COMMAND_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for CreateCommand"
+                },
+                "CREATE_COMMAND_MODEL": {
+                    "type": "string",
+                    "description": "Model override for CreateCommand"
+                },
+                "CREATE_COMMAND_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for CreateCommand"
+                },
+                "CREATE_COMMAND_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for CreateCommand"
+                },
+                "CREATE_COMMAND_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for CreateCommand"
+                },
+                "DATABASE_MASTER_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for DatabaseMaster"
+                },
+                "DATABASE_MASTER_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for DatabaseMaster"
+                },
+                "DATABASE_MASTER_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for DatabaseMaster"
+                },
+                "DATABASE_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Model override for DatabaseMaster"
+                },
+                "DATABASE_MASTER_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for DatabaseMaster"
+                },
+                "DATABASE_MASTER_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for DatabaseMaster"
+                },
+                "DATABASE_MASTER_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for DatabaseMaster"
+                },
+                "DECOMPOSE_COMMAND_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for DecomposeCommand"
+                },
+                "DECOMPOSE_COMMAND_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for DecomposeCommand"
+                },
+                "DECOMPOSE_COMMAND_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for DecomposeCommand"
+                },
+                "DECOMPOSE_COMMAND_MODEL": {
+                    "type": "string",
+                    "description": "Model override for DecomposeCommand"
+                },
+                "DECOMPOSE_COMMAND_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for DecomposeCommand"
+                },
+                "DECOMPOSE_COMMAND_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for DecomposeCommand"
+                },
+                "DECOMPOSE_COMMAND_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for DecomposeCommand"
+                },
+                "DOCUMENTATION_MASTER_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for DocumentationMaster"
+                },
+                "DOCUMENTATION_MASTER_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for DocumentationMaster"
+                },
+                "DOCUMENTATION_MASTER_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for DocumentationMaster"
+                },
+                "DOCUMENTATION_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Model override for DocumentationMaster"
+                },
+                "DOCUMENTATION_MASTER_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for DocumentationMaster"
+                },
+                "DOCUMENTATION_MASTER_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for DocumentationMaster"
+                },
+                "DOCUMENTATION_MASTER_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for DocumentationMaster"
+                },
+                "DO_COMMAND_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for DoCommand"
+                },
+                "DO_COMMAND_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for DoCommand"
+                },
+                "DO_COMMAND_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for DoCommand"
+                },
+                "DO_COMMAND_MODEL": {
+                    "type": "string",
+                    "description": "Model override for DoCommand"
+                },
+                "DO_COMMAND_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for DoCommand"
+                },
+                "DO_COMMAND_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for DoCommand"
+                },
+                "DO_COMMAND_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for DoCommand"
+                },
+                "EXPLORE_MASTER_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for ExploreMaster"
+                },
+                "EXPLORE_MASTER_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for ExploreMaster"
+                },
+                "EXPLORE_MASTER_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for ExploreMaster"
+                },
+                "EXPLORE_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Model override for ExploreMaster"
+                },
+                "EXPLORE_MASTER_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for ExploreMaster"
+                },
+                "EXPLORE_MASTER_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for ExploreMaster"
+                },
+                "EXPLORE_MASTER_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for ExploreMaster"
+                },
+                "GEMINI_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Default model for Gemini CLI agents"
+                },
+                "GET_COMMAND_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for GetCommand"
+                },
+                "GET_COMMAND_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for GetCommand"
+                },
+                "GET_COMMAND_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for GetCommand"
+                },
+                "GET_COMMAND_MODEL": {
+                    "type": "string",
+                    "description": "Model override for GetCommand"
+                },
+                "GET_COMMAND_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for GetCommand"
+                },
+                "GET_COMMAND_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for GetCommand"
+                },
+                "GET_COMMAND_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for GetCommand"
+                },
+                "GROQ_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Default model for Groq CLI agents"
+                },
+                "INIT_AGENTS_COMMAND_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for InitAgentsCommand"
+                },
+                "INIT_AGENTS_COMMAND_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for InitAgentsCommand"
+                },
+                "INIT_AGENTS_COMMAND_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for InitAgentsCommand"
+                },
+                "INIT_AGENTS_COMMAND_MODEL": {
+                    "type": "string",
+                    "description": "Model override for InitAgentsCommand"
+                },
+                "INIT_AGENTS_COMMAND_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for InitAgentsCommand"
+                },
+                "INIT_AGENTS_COMMAND_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for InitAgentsCommand"
+                },
+                "INIT_AGENTS_COMMAND_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for InitAgentsCommand"
+                },
+                "INIT_BRAIN_COMMAND_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for InitBrainCommand"
+                },
+                "INIT_BRAIN_COMMAND_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for InitBrainCommand"
+                },
+                "INIT_BRAIN_COMMAND_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for InitBrainCommand"
+                },
+                "INIT_BRAIN_COMMAND_MODEL": {
+                    "type": "string",
+                    "description": "Model override for InitBrainCommand"
+                },
+                "INIT_BRAIN_COMMAND_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for InitBrainCommand"
+                },
+                "INIT_BRAIN_COMMAND_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for InitBrainCommand"
+                },
+                "INIT_BRAIN_COMMAND_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for InitBrainCommand"
+                },
+                "INIT_TASK_COMMAND_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for InitTaskCommand"
+                },
+                "INIT_TASK_COMMAND_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for InitTaskCommand"
+                },
+                "INIT_TASK_COMMAND_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for InitTaskCommand"
+                },
+                "INIT_TASK_COMMAND_MODEL": {
+                    "type": "string",
+                    "description": "Model override for InitTaskCommand"
+                },
+                "INIT_TASK_COMMAND_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for InitTaskCommand"
+                },
+                "INIT_TASK_COMMAND_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for InitTaskCommand"
+                },
+                "INIT_TASK_COMMAND_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for InitTaskCommand"
+                },
+                "INIT_VECTOR_COMMAND_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for InitVectorCommand"
+                },
+                "INIT_VECTOR_COMMAND_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for InitVectorCommand"
+                },
+                "INIT_VECTOR_COMMAND_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for InitVectorCommand"
+                },
+                "INIT_VECTOR_COMMAND_MODEL": {
+                    "type": "string",
+                    "description": "Model override for InitVectorCommand"
+                },
+                "INIT_VECTOR_COMMAND_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for InitVectorCommand"
+                },
+                "INIT_VECTOR_COMMAND_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for InitVectorCommand"
+                },
+                "INIT_VECTOR_COMMAND_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for InitVectorCommand"
+                },
+                "LIST_COMMAND_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for ListCommand"
+                },
+                "LIST_COMMAND_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for ListCommand"
+                },
+                "LIST_COMMAND_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for ListCommand"
+                },
+                "LIST_COMMAND_MODEL": {
+                    "type": "string",
+                    "description": "Model override for ListCommand"
+                },
+                "LIST_COMMAND_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for ListCommand"
+                },
+                "LIST_COMMAND_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for ListCommand"
+                },
+                "LIST_COMMAND_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for ListCommand"
+                },
+                "LM-STUDIO_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Default model for LM Studio agents"
+                },
+                "MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Global model override for all masters/agents"
+                },
+                "MCP_CONTEXT7_MCP_DISABLE": {
+                    "type": "string",
+                    "description": "Disable Context7Mcp from compilation (true/false)"
+                },
+                "MCP_SEQUENTIAL_THINKING_MCP_DISABLE": {
+                    "type": "string",
+                    "description": "Disable SequentialThinkingMcp from compilation (true/false)"
+                },
+                "MCP_VECTOR_MEMORY_MCP_DISABLE": {
+                    "type": "string",
+                    "description": "Disable VectorMemoryMcp from compilation (true/false)"
+                },
+                "MCP_VECTOR_TASK_MCP_DISABLE": {
+                    "type": "string",
+                    "description": "Disable VectorTaskMcp from compilation (true/false)"
+                },
+                "OPENCODE_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Default model for OpenCode CLI agents"
+                },
+                "OPENROUTER_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Default model for OpenRouter CLI agents"
+                },
+                "PROMPT_MASTER_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for PromptMaster"
+                },
+                "PROMPT_MASTER_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for PromptMaster"
+                },
+                "PROMPT_MASTER_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for PromptMaster"
+                },
+                "PROMPT_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Model override for PromptMaster"
+                },
+                "PROMPT_MASTER_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for PromptMaster"
+                },
+                "PROMPT_MASTER_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for PromptMaster"
+                },
+                "PROMPT_MASTER_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for PromptMaster"
+                },
+                "PYTHON_MCP_MASTER_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for PythonMcpMaster"
+                },
+                "PYTHON_MCP_MASTER_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for PythonMcpMaster"
+                },
+                "PYTHON_MCP_MASTER_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for PythonMcpMaster"
+                },
+                "PYTHON_MCP_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Model override for PythonMcpMaster"
+                },
+                "PYTHON_MCP_MASTER_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for PythonMcpMaster"
+                },
+                "PYTHON_MCP_MASTER_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for PythonMcpMaster"
+                },
+                "PYTHON_MCP_MASTER_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for PythonMcpMaster"
+                },
+                "QWEN_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Default model for Qwen CLI agents"
+                },
+                "SCRIPT_MASTER_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for ScriptMaster"
+                },
+                "SCRIPT_MASTER_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for ScriptMaster"
+                },
+                "SCRIPT_MASTER_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for ScriptMaster"
+                },
+                "SCRIPT_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Model override for ScriptMaster"
+                },
+                "SCRIPT_MASTER_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for ScriptMaster"
+                },
+                "SCRIPT_MASTER_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for ScriptMaster"
+                },
+                "SCRIPT_MASTER_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for ScriptMaster"
+                },
+                "SEARCH_COMMAND_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for SearchCommand"
+                },
+                "SEARCH_COMMAND_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for SearchCommand"
+                },
+                "SEARCH_COMMAND_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for SearchCommand"
+                },
+                "SEARCH_COMMAND_MODEL": {
+                    "type": "string",
+                    "description": "Model override for SearchCommand"
+                },
+                "SEARCH_COMMAND_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for SearchCommand"
+                },
+                "SEARCH_COMMAND_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for SearchCommand"
+                },
+                "SEARCH_COMMAND_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for SearchCommand"
+                },
+                "SECURITY_AUDIT_MASTER_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for SecurityAuditMaster"
+                },
+                "SECURITY_AUDIT_MASTER_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for SecurityAuditMaster"
+                },
+                "SECURITY_AUDIT_MASTER_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for SecurityAuditMaster"
+                },
+                "SECURITY_AUDIT_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Model override for SecurityAuditMaster"
+                },
+                "SECURITY_AUDIT_MASTER_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for SecurityAuditMaster"
+                },
+                "SECURITY_AUDIT_MASTER_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for SecurityAuditMaster"
+                },
+                "SECURITY_AUDIT_MASTER_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for SecurityAuditMaster"
+                },
+                "SEQUENTIAL_THINKING_MCP_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for SequentialThinkingMcp"
+                },
+                "SEQUENTIAL_THINKING_MCP_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for SequentialThinkingMcp"
+                },
+                "SEQUENTIAL_THINKING_MCP_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for SequentialThinkingMcp"
+                },
+                "SEQUENTIAL_THINKING_MCP_MODEL": {
+                    "type": "string",
+                    "description": "Model override for SequentialThinkingMcp"
+                },
+                "SEQUENTIAL_THINKING_MCP_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for SequentialThinkingMcp"
+                },
+                "SEQUENTIAL_THINKING_MCP_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for SequentialThinkingMcp"
+                },
+                "SEQUENTIAL_THINKING_MCP_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for SequentialThinkingMcp"
+                },
+                "STATS_COMMAND_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for StatsCommand"
+                },
+                "STATS_COMMAND_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for StatsCommand"
+                },
+                "STATS_COMMAND_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for StatsCommand"
+                },
+                "STATS_COMMAND_MODEL": {
+                    "type": "string",
+                    "description": "Model override for StatsCommand"
+                },
+                "STATS_COMMAND_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for StatsCommand"
+                },
+                "STATS_COMMAND_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for StatsCommand"
+                },
+                "STATS_COMMAND_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for StatsCommand"
+                },
+                "STATUS_COMMAND_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for StatusCommand"
+                },
+                "STATUS_COMMAND_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for StatusCommand"
+                },
+                "STATUS_COMMAND_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for StatusCommand"
+                },
+                "STATUS_COMMAND_MODEL": {
+                    "type": "string",
+                    "description": "Model override for StatusCommand"
+                },
+                "STATUS_COMMAND_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for StatusCommand"
+                },
+                "STATUS_COMMAND_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for StatusCommand"
+                },
+                "STATUS_COMMAND_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for StatusCommand"
+                },
+                "STORE_COMMAND_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for StoreCommand"
+                },
+                "STORE_COMMAND_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for StoreCommand"
+                },
+                "STORE_COMMAND_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for StoreCommand"
+                },
+                "STORE_COMMAND_MODEL": {
+                    "type": "string",
+                    "description": "Model override for StoreCommand"
+                },
+                "STORE_COMMAND_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for StoreCommand"
+                },
+                "STORE_COMMAND_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for StoreCommand"
+                },
+                "STORE_COMMAND_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for StoreCommand"
+                },
+                "SYNC_COMMAND_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for SyncCommand"
+                },
+                "SYNC_COMMAND_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for SyncCommand"
+                },
+                "SYNC_COMMAND_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for SyncCommand"
+                },
+                "SYNC_COMMAND_MODEL": {
+                    "type": "string",
+                    "description": "Model override for SyncCommand"
+                },
+                "SYNC_COMMAND_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for SyncCommand"
+                },
+                "SYNC_COMMAND_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for SyncCommand"
+                },
+                "SYNC_COMMAND_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for SyncCommand"
+                },
+                "TESTING_MASTER_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for TestingMaster"
+                },
+                "TESTING_MASTER_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for TestingMaster"
+                },
+                "TESTING_MASTER_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for TestingMaster"
+                },
+                "TESTING_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Model override for TestingMaster"
+                },
+                "TESTING_MASTER_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for TestingMaster"
+                },
+                "TESTING_MASTER_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for TestingMaster"
+                },
+                "TESTING_MASTER_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for TestingMaster"
+                },
+                "VECTOR_MASTER_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for VectorMaster"
+                },
+                "VECTOR_MASTER_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for VectorMaster"
+                },
+                "VECTOR_MASTER_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for VectorMaster"
+                },
+                "VECTOR_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Model override for VectorMaster"
+                },
+                "VECTOR_MASTER_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for VectorMaster"
+                },
+                "VECTOR_MASTER_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for VectorMaster"
+                },
+                "VECTOR_MASTER_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for VectorMaster"
+                },
+                "VECTOR_MEMORY_MCP_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for VectorMemoryMcp"
+                },
+                "VECTOR_MEMORY_MCP_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for VectorMemoryMcp"
+                },
+                "VECTOR_MEMORY_MCP_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for VectorMemoryMcp"
+                },
+                "VECTOR_MEMORY_MCP_MODEL": {
+                    "type": "string",
+                    "description": "Model override for VectorMemoryMcp"
+                },
+                "VECTOR_MEMORY_MCP_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for VectorMemoryMcp"
+                },
+                "VECTOR_MEMORY_MCP_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for VectorMemoryMcp"
+                },
+                "VECTOR_MEMORY_MCP_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for VectorMemoryMcp"
+                },
+                "VECTOR_TASK_MCP_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for VectorTaskMcp"
+                },
+                "VECTOR_TASK_MCP_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for VectorTaskMcp"
+                },
+                "VECTOR_TASK_MCP_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for VectorTaskMcp"
+                },
+                "VECTOR_TASK_MCP_MODEL": {
+                    "type": "string",
+                    "description": "Model override for VectorTaskMcp"
+                },
+                "VECTOR_TASK_MCP_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for VectorTaskMcp"
+                },
+                "VECTOR_TASK_MCP_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for VectorTaskMcp"
+                },
+                "VECTOR_TASK_MCP_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for VectorTaskMcp"
+                },
+                "WEB_RESEARCH_MASTER_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for WebResearchMaster"
+                },
+                "WEB_RESEARCH_MASTER_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for WebResearchMaster"
+                },
+                "WEB_RESEARCH_MASTER_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for WebResearchMaster"
+                },
+                "WEB_RESEARCH_MASTER_MODEL": {
+                    "type": "string",
+                    "description": "Model override for WebResearchMaster"
+                },
+                "WEB_RESEARCH_MASTER_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for WebResearchMaster"
+                },
+                "WEB_RESEARCH_MASTER_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for WebResearchMaster"
+                },
+                "WEB_RESEARCH_MASTER_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for WebResearchMaster"
+                },
+                "WORK_COMMAND_GUIDELINE_0": {
+                    "type": "string",
+                    "description": "Custom guideline #0 for WorkCommand"
+                },
+                "WORK_COMMAND_GUIDELINE_1": {
+                    "type": "string",
+                    "description": "Custom guideline #1 for WorkCommand"
+                },
+                "WORK_COMMAND_GUIDELINE_2": {
+                    "type": "string",
+                    "description": "Custom guideline #2 for WorkCommand"
+                },
+                "WORK_COMMAND_MODEL": {
+                    "type": "string",
+                    "description": "Model override for WorkCommand"
+                },
+                "WORK_COMMAND_RULE_0": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #0 for WorkCommand"
+                },
+                "WORK_COMMAND_RULE_1": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #1 for WorkCommand"
+                },
+                "WORK_COMMAND_RULE_2": {
+                    "type": "string",
+                    "description": "Custom CRITICAL rule #2 for WorkCommand"
+                }
+            },
+            "examples": [
+                "AGENTS_AGENT_MASTER_DISABLE",
+                "AGENTS_COMMIT_MASTER_DISABLE",
+                "AGENTS_DATABASE_MASTER_DISABLE",
+                "AGENTS_DOCUMENTATION_MASTER_DISABLE",
+                "AGENTS_EXPLORE_MASTER_DISABLE",
+                "AGENTS_PROMPT_MASTER_DISABLE",
+                "AGENTS_PYTHON_MCP_MASTER_DISABLE",
+                "AGENTS_SCRIPT_MASTER_DISABLE",
+                "AGENTS_SECURITY_AUDIT_MASTER_DISABLE",
+                "AGENTS_TESTING_MASTER_DISABLE",
+                "AGENTS_VECTOR_MASTER_DISABLE",
+                "AGENTS_WEB_RESEARCH_MASTER_DISABLE",
+                "AGENT_MASTER_GUIDELINE_0",
+                "AGENT_MASTER_GUIDELINE_1",
+                "AGENT_MASTER_GUIDELINE_2",
+                "AGENT_MASTER_MODEL",
+                "AGENT_MASTER_RULE_0",
+                "AGENT_MASTER_RULE_1",
+                "AGENT_MASTER_RULE_2",
+                "ASYNC_COMMAND_GUIDELINE_0"
+            ]
+        },
+        "envVariablePatterns": {
+            "type": "object",
+            "description": "ENV variable naming patterns",
+            "properties": {
+                "rule": {
+                    "type": "string",
+                    "description": "Pattern: {CLASS_NAME}_RULE_{N} where N is 0-based index",
+                    "pattern": "^[A-Z_]+_RULE_\\d+$"
+                },
+                "guideline": {
+                    "type": "string",
+                    "description": "Pattern: {CLASS_NAME}_GUIDELINE_{N} where N is 0-based index",
+                    "pattern": "^[A-Z_]+_GUIDELINE_\\d+$"
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Pattern: {CLASS_NAME}_MODEL for per-class model override",
+                    "pattern": "^[A-Z_]+_MODEL$"
+                },
+                "disable": {
+                    "type": "string",
+                    "description": "Pattern: {NAMESPACE}_{CLASS_NAME}_DISABLE (true/false)",
+                    "pattern": "^(AGENTS|COMMANDS|SKILLS|MCP|INCLUDES)_[A-Z_]+_DISABLE$"
+                }
+            }
+        }
+    },
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "description": "Unique identifier for this agent configuration. Used for referencing and caching.",
+            "pattern": "^[a-z][a-z0-9-_]*$",
+            "examples": [
+                "my-agent",
+                "task_executor",
+                "web-researcher"
+            ]
+        },
+        "name": {
+            "type": "string",
+            "description": "Display name for the command. Supports variable interpolation (e.g., '{$_call_name} Agent').",
+            "examples": [
+                "Task Executor",
+                "{$project_name} Builder"
+            ]
+        },
+        "description": {
+            "type": "string",
+            "description": "Human-readable description of the agent's purpose. Supports variable interpolation.",
+            "examples": [
+                "Executes tasks with AI assistance",
+                "Builds {$target} for {$platform}"
+            ]
+        },
+        "client": {
+            "type": "string",
+            "enum": [
+                "claude",
+                "codex",
+                "gemini",
+                "qwen",
+                "lm-studio",
+                "openrouter",
+                "groq",
+                "opencode"
+            ],
+            "description": "AI client to use for execution. This is the ONLY required field.\n\n- claude: Anthropic Claude (claude-3-opus, claude-3-sonnet, etc.)\n- codex: OpenAI Codex\n- gemini: Google Gemini\n- qwen: Alibaba Qwen\n- lm-studio: Local LM Studio\n- openrouter: OpenRouter API\n- groq: Groq Cloud\n- opencode: OpenCode compatible APIs"
+        },
+        "aliases": {
+            "type": "array",
+            "description": "Alternative command names that can invoke this agent.",
+            "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-_]*$"
+            },
+            "uniqueItems": true,
+            "examples": [
+                [
+                    "exec",
+                    "run",
+                    "do"
+                ]
+            ]
+        },
+        "args": {
+            "type": "array",
+            "description": "Arguments passed to the command. Accessible via $args.0, $args.1, etc.",
+            "items": {
+                "oneOf": [
+                    {
+                        "type": "null"
+                    },
+                    {
+                        "type": "string"
+                    },
+                    {
+                        "type": "number"
+                    },
+                    {
+                        "type": "boolean"
+                    },
+                    {
+                        "type": "object"
+                    },
+                    {
+                        "type": "array"
+                    }
+                ]
+            },
+            "examples": [
+                [
+                    "task-name",
+                    "--verbose",
+                    42
+                ]
+            ]
+        },
+        "args_names": {
+            "type": "array",
+            "description": "Named aliases for positional arguments. Maps index to name, enabling access via $args.name alongside $args.0. Each name corresponds to the argument at the same index.",
+            "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "description": "Argument name in snake_case. Must be valid identifier."
+            },
+            "examples": [
+                [
+                    "task_id"
+                ],
+                [
+                    "task_id",
+                    "priority",
+                    "tags"
+                ]
+            ]
+        },
+        "resume": {
+            "type": "string",
+            "description": "Session ID to resume. Continues from a previous execution state.",
+            "examples": [
+                "session_abc123",
+                "{$_last_session}"
+            ]
+        },
+        "continue": {
+            "type": "boolean",
+            "default": false,
+            "description": "If true, continues the last session automatically without specifying session ID."
+        },
+        "dump": {
+            "type": "boolean",
+            "default": false,
+            "description": "If true, dumps all processed data before execution for debugging purposes."
+        },
+        "params": {
+            "type": "object",
+            "description": "Parameters controlling AI execution behavior.",
+            "properties": {
+                "ask": {
+                    "type": "string",
+                    "description": "Input prompt template for user. Displayed before execution to gather input. Supports variable interpolation.",
+                    "examples": [
+                        "What would you like me to do?",
+                        "Describe the {$task_type} to execute:"
+                    ]
+                },
+                "prompt": {
+                    "type": "string",
+                    "description": "Direct prompt text to send to the AI. Supports variable interpolation and file imports (@file.txt).",
+                    "examples": [
+                        "Analyze this code: {$code}",
+                        "@prompts/analyze.txt"
+                    ]
+                },
+                "json": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable JSON output mode. AI will respond with valid JSON only."
+                },
+                "serialize": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Serialize the output for storage or transmission."
+                },
+                "yolo": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Skip safety checks and confirmations. Use with caution in production."
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Override the default model for this execution. Model availability depends on client.",
+                    "examples": [
+                        "claude-opus-4-5",
+                        "claude-sonnet-4-5",
+                        "claude-haiku-4-5",
+                        "gpt-5.1-codex-max",
+                        "gpt-5.1-codex",
+                        "gpt-5.1-codex-mini",
+                        "gpt-5.1",
+                        "gpt-5.2-codex-max",
+                        "gpt-5.2-codex",
+                        "gpt-5.2-codex-mini",
+                        "gpt-5.2",
+                        "gemini-2.5-pro",
+                        "gemini-2.5-flash",
+                        "gemini-2.5-flash-lite",
+                        "qwen3-coder-plus",
+                        "openai/gpt-oss-20b",
+                        "qwen/qwen3-coder-30b",
+                        "qwen/qwen3-next-80b",
+                        "qwen/qwen3-vl-30b",
+                        "mistralai/ministral-3-14b-reasoning",
+                        "mistralai/devstral-small-2-2512",
+                        "openai/gpt-oss-20b:free",
+                        "openai/gpt-oss-120b:free",
+                        "alibaba/tongyi-deepresearch-30b-a3b:free",
+                        "kwaipilot/kat-coder-pro:free",
+                        "nex-agi/deepseek-v3.1-nex-n1:free",
+                        "qwen/qwen3-coder:free",
+                        "amazon/nova-2-lite-v1:free",
+                        "arcee-ai/trinity-mini:free",
+                        "tngtech/tng-r1t-chimera:free",
+                        "z-ai/glm-4.5-air:free",
+                        "llama-3.1-8b-instant",
+                        "llama-3.3-70b-instant",
+                        "meta-llama/llama-guard-4-12b",
+                        "openai/gpt-oss-120b",
+                        "zai-coding-plan/glm-4.7",
+                        "opencode/glm-4.7-free",
+                        "opencode/big-pickle",
+                        "opencode/grok-code",
+                        "openai/gpt-5.2-codex",
+                        "openai/gpt-5.2-medium",
+                        "anthropic/claude-opus-4-5",
+                        "anthropic/claude-sonnet-4-5",
+                        "anthropic/claude-haiku-4-5",
+                        "lmstudio/qwen/qwen3-coder-30b",
+                        "lmstudio/deepseek-coder-v2-lite-instruct",
+                        "alibaba/qwen3-coder-480b-a35b-instruct",
+                        "google/gemini-3-pro-preview",
+                        "google/gemini-3-flash-preview",
+                        "github-copilot/claude-sonnet-4.5",
+                        "github-copilot/claude-opus-4.5",
+                        "github-copilot/claude-haiku-4.5",
+                        "github-copilot/gemini-3-flash-preview",
+                        "github-copilot/gemini-3-pro-preview",
+                        "github-copilot/gpt-5.1-codex",
+                        "github-copilot/gpt-5.1-codex-max",
+                        "github-copilot/gpt-5.1-codex-mini",
+                        "github-copilot/gpt-5.1",
+                        "github-copilot/gpt-5.2",
+                        "github-copilot/grok-code-fast-1"
+                    ]
+                },
+                "system": {
+                    "type": "string",
+                    "description": "Complete system prompt override. Replaces default system instructions.",
+                    "examples": [
+                        "You are a code reviewer.",
+                        "@system-prompts/reviewer.txt"
+                    ]
+                },
+                "systemAppend": {
+                    "type": "string",
+                    "description": "Append text to the default system prompt. Use for adding context without replacing defaults.",
+                    "examples": [
+                        "Focus on security vulnerabilities.",
+                        "The codebase uses Laravel 11."
+                    ]
+                },
+                "schema": {
+                    "type": "object",
+                    "description": "JSON Schema for structured output validation. AI response must conform to this schema.",
+                    "examples": [
+                        {
+                            "type": "object",
+                            "properties": {
+                                "status": {
+                                    "type": "string",
+                                    "enum": [
+                                        "success",
+                                        "error"
+                                    ]
+                                },
+                                "message": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "status"
+                            ]
+                        }
+                    ]
+                },
+                "dump": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Debug dump within params context."
+                },
+                "resume": {
+                    "type": "string",
+                    "description": "Resume session ID within params context."
+                },
+                "continue": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Continue last session within params context."
+                },
+                "noMcp": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Disable MCP (Model Context Protocol) servers for this execution."
+                }
+            },
+            "additionalProperties": true
+        },
+        "env": {
+            "type": "object",
+            "description": "Environment variables to set during execution. All values are converted to strings.",
+            "additionalProperties": {
+                "$ref": "#/$defs/variableValue"
+            },
+            "examples": [
+                {
+                    "DEBUG": true,
+                    "API_KEY": "{$_env.API_KEY}",
+                    "TIMEOUT": 30
+                }
+            ]
+        },
+        "brain": {
+            "type": "object",
+            "description": "Instructions to inject directly into Brain (main orchestrator). No nesting - rules and guidelines apply globally.",
+            "properties": {
+                "rule": {
+                    "$ref": "#/$defs/ruleArray"
+                },
+                "guideline": {
+                    "$ref": "#/$defs/guidelineArray"
+                }
+            },
+            "additionalProperties": false,
+            "examples": [
+                {
+                    "rule": [
+                        "Always validate user input",
+                        "Log all critical operations"
+                    ],
+                    "guideline": [
+                        "Prefer delegation to specialized agents"
+                    ]
+                }
+            ]
+        },
+        "agents": {
+            "$ref": "#/$defs/nestedArchetypeMap",
+            "description": "Instructions to inject into specific agents. Keys are agent IDs in snake_case (e.g., explore_master).",
+            "examples": [
+                {
+                    "explore_master": {
+                        "rule": [
+                            "Search only in src/ directory"
+                        ],
+                        "guideline": [
+                            "Prioritize PHP files over others"
+                        ]
+                    },
+                    "commit_master": {
+                        "rule": [
+                            "Always run tests before committing"
+                        ]
+                    }
+                }
+            ]
+        },
+        "commands": {
+            "$ref": "#/$defs/nestedArchetypeMap",
+            "description": "Instructions to inject into specific commands. Keys are command IDs in snake_case (e.g., task_validate_command).\n\nTransforms to environment variables:\n- `commands.task_validate_command.rule[0]` -> `TASK_VALIDATE_COMMAND_RULE_0`\n- `commands.task_validate_command.guideline[0]` -> `TASK_VALIDATE_COMMAND_GUIDELINE_0`",
+            "examples": [
+                {
+                    "task_validate_command": {
+                        "rule": [
+                            "Validate all task inputs",
+                            "Check for circular dependencies"
+                        ],
+                        "guideline": [
+                            "Provide helpful error messages"
+                        ]
+                    }
+                }
+            ]
+        },
+        "skills": {
+            "$ref": "#/$defs/nestedArchetypeMap",
+            "description": "Instructions to inject into specific skills. Keys are skill IDs in snake_case.",
+            "examples": [
+                {
+                    "git_skill": {
+                        "rule": [
+                            "Never force push to main branch"
+                        ],
+                        "guideline": [
+                            "Use conventional commit messages"
+                        ]
+                    }
+                }
+            ]
+        },
+        "includes": {
+            "$ref": "#/$defs/nestedArchetypeMap",
+            "description": "Instructions to inject into specific includes. Keys are include IDs in snake_case.",
+            "examples": [
+                {
+                    "core_constraints": {
+                        "guideline": [
+                            "Apply stricter validation in production"
+                        ]
+                    }
+                }
+            ]
+        }
+    },
+    "required": [
+        "client"
+    ],
+    "additionalProperties": true,
+    "examples": [
+        {
+            "id": "task-executor",
+            "name": "Task Executor",
+            "description": "Executes development tasks with AI assistance",
+            "client": "claude",
+            "aliases": [
+                "exec",
+                "run"
+            ],
+            "params": {
+                "model": "claude-3-sonnet-20240229",
+                "ask": "What task would you like to execute?",
+                "yolo": false
+            },
+            "env": {
+                "DEBUG": true,
+                "MAX_RETRIES": 3
+            },
+            "brain": {
+                "rule": [
+                    "Always explain your reasoning"
+                ],
+                "guideline": [
+                    "Break complex tasks into subtasks"
+                ]
+            },
+            "agents": {
+                "explore_master": {
+                    "guideline": [
+                        "Focus on test files when debugging"
+                    ]
+                }
+            },
+            "commands": {
+                "task_validate_command": {
+                    "rule": [
+                        "Validate all inputs thoroughly"
+                    ]
+                }
+            }
+        },
+        {
+            "client": "claude",
+            "params": {
+                "prompt": "Analyze this: {$args.0}",
+                "json": true,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "analysis": {
+                            "type": "string"
+                        },
+                        "score": {
+                            "type": "number"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "client": "{$_default_client ?: claude}",
+            "params": {
+                "system": "@system-prompts/{$mode}.txt",
+                "prompt": "{$debug ? 'DEBUG: ' : ''}{$query}"
+            },
+            "env": {
+                "MODE": "{$mode ?? production}"
+            }
+        },
+        {
+            "client": "claude",
+            "args": [
+                null,
+                "medium"
+            ],
+            "args_names": [
+                "task_id",
+                "priority"
+            ],
+            "params": {
+                "prompt": "Process task {$args.task_id} with priority {$args.priority}"
+            }
+        }
+    ]
+}

@@ -1,5 +1,5 @@
 ---
-name: init-agents
+name: "init-agents"
 description: "Incremental Agent Gap Analyzer - Auto-generates missing domain agents (project)"
 ---
 
@@ -8,291 +8,298 @@ description: "Incremental Agent Gap Analyzer - Auto-generates missing domain age
 <id>init-agents</id>
 <description>Incremental Agent Gap Analyzer - Auto-generates missing domain agents (project)</description>
 </meta>
-<purpose>Auto-analyze
+<execute>Auto-analyze
 .claude/CLAUDE.md
 and existing agents → identify gaps → generate missing agents via
 brain make:master
-→ safe for repeated runs. Supports optional $ARGUMENTS for targeted search.</purpose>
-<iron_rules>
-<rule id="no-interactive-questions" severity="critical">
-<text>NO interactive questions</text>
-<why>Automated workflow for gap analysis and generation</why>
-<on_violation>Execute fully automated without user prompts</on_violation>
-</rule>
-<rule id="temporal-context-first" severity="critical">
-<text>Temporal context FIRST: Bash('date')</text>
-<why>Ensures up-to-date best practices in generated artifacts</why>
-<on_violation>Missing temporal context leads to outdated patterns</on_violation>
-</rule>
-<rule id="brain-make-master-only" severity="critical">
-<text>MUST use Bash('brain make:master') for agent creation - NOT Write() or Edit()</text>
-<why>brain make:master ensures proper PHP archetype structure and compilation compatibility</why>
-<on_violation>Manually created agents may have structural issues and compilation errors</on_violation>
-</rule>
-<rule id="no-regeneration" severity="critical">
-<text>No regeneration of existing agents</text>
-<why>Idempotent operation safe for repeated execution</why>
-<on_violation>Wasted computation and potential conflicts</on_violation>
-</rule>
-<rule id="delegates-web-research" severity="high">
-<text>Brain MUST delegate all web research to WebResearchMaster, never execute WebSearch directly</text>
-<why>Maintains delegation hierarchy and prevents Brain from performing execution-level tasks</why>
-<on_violation>Delegation protocol violation - escalate to Architect Agent</on_violation>
-</rule>
-<rule id="cache-web-results" severity="high">
-<text>Store web research patterns in vector memory for 30 days to speed up repeated runs</text>
-<why>Avoids redundant web searches and improves performance</why>
-<on_violation>Unnecessary web API calls and slower execution</on_violation>
-</rule>
-</iron_rules>
-<guidelines>
-<guideline id="phase0-arguments-processing">
+→ safe for repeated runs. Supports optional $ARGUMENTS for targeted search.</execute>
+<provides>The InitAgents command initializes the project with agents based on industry best practices.</provides>
+
+# Iron Rules
+## Mandatory-agentmaster-delegation (CRITICAL)
+Brain MUST delegate ALL agent generation to AgentMaster. FORBIDDEN: Brain creating agents directly.
+- **why**: Separation of orchestration (Brain) and execution (AgentMaster). Brain is NOT an executor.
+- **on_violation**: ABORT. Delegate to AgentMaster immediately. Brain orchestrates, never executes.
+
+## Project-agents-only (CRITICAL)
+ONLY create PROJECT-SPECIFIC agents using Master variation FORBIDDEN: Creating or modifying SYSTEM agents (AgentMaster, PromptMaster, CommitMaster, etc.) FORBIDDEN: Modifying agents from vendor/jarvis-brain/core/src/ System agents use SystemMaster variation and are OFF LIMITS
+- **why**: System agents are pre-configured via SystemMaster variation. Project agents use Master variation.
+- **on_violation**: Skip system agent. Only create project-specific agents.
+
+## Preserve-system-agents (CRITICAL)
+System agents (ending with Master) are managed by SystemMaster variation Examples: AgentMaster, PromptMaster, CommitMaster, WebResearchMaster, ExploreMaster, DocumentationMaster, VectorMaster, ScriptMaster These agents are specialized for Brain orchestration - NEVER regenerate or modify them
+- **why**: System agents have carefully tuned configurations for Brain ecosystem
+- **on_violation**: ABORT modification. System agents are immutable.
+
+## Parallel-agentmaster-execution (CRITICAL)
+Run up to 5 AgentMaster instances in PARALLEL. Each AgentMaster can generate 1-3 agents per batch.
+- **why**: Maximizes throughput. Sequential generation wastes time. Parallel = 5x faster.
+- **on_violation**: Batch agents into groups of 3, delegate to 5 AgentMasters concurrently.
+
+## No-interactive-questions (CRITICAL)
+NO interactive questions. Fully automated gap analysis and generation.
+- **why**: Automated workflow requires zero user prompts
+- **on_violation**: Execute fully automated
+
+## Brain-make-master-only (CRITICAL)
+AgentMaster MUST use Bash('brain make:master') for creation - NOT Write() or Edit()
+- **why**: Ensures proper PHP archetype structure and compilation compatibility
+- **on_violation**: Reject manually created agents
+
+## No-regeneration (CRITICAL)
+Skip existing agents. Idempotent operation.
+- **why**: Safe for repeated execution
+- **on_violation**: Skip and continue
+
+## Delegates-web-research (HIGH)
+Delegate web research to WebResearchMaster. Brain NEVER executes WebSearch.
+- **why**: Maintains delegation hierarchy
+- **on_violation**: Delegate to WebResearchMaster
+
+
+# Input
+STORE-AS($RAW_INPUT = $ARGUMENTS)
+STORE-AS($INIT_PARAMS = {initialization parameters extracted from $RAW_INPUT})
+
+# Phase0 arguments processing
 GOAL(Process optional user arguments to narrow search scope and improve targeting)
-<example>
-<phase name="1">Parse $ARGUMENTS for specific domain/technology/agent hints</phase>
-<phase name="2">IF($ARGUMENTS provided) → THEN → [Extract: target_domain (e.g., "Laravel", "React", "API"), target_technology, specific_agents → STORE-AS($ = '{domain: ..., tech: ..., agents: [...], keywords: [...]}') → Set search_mode = "targeted" → Log: "Targeted mode: focusing on {domain}/{tech}"] → END-IF</phase>
-<phase name="3">IF($ARGUMENTS empty) → THEN → [Set search_mode = "discovery" → Use full project analysis workflow → Log: "Discovery mode: full project analysis"] → END-IF</phase>
-<phase name="4">Store search mode for use in subsequent phases</phase>
-</example>
-</guideline>
-<guideline id="phase1-temporal-context-and-web-cache">
+- `1`: OUTPUT(=== INIT:AGENTS ACTIVATED ===  === PHASE 0: ARGUMENTS PROCESSING === Processing input...)
+- `2`: STORE-AS($TARGET_DOMAIN = {extract domain hint from $RAW_INPUT if provided})
+- `3`: Parse $RAW_INPUT for specific domain/technology/agent hints
+- `4`: IF($RAW_INPUT provided) →
+  Extract: target_domain from $TARGET_DOMAIN (e.g., "Laravel", "React", "API"), target_technology, specific_agents
+  STORE-AS($SEARCH_FILTER = {domain: $TARGET_DOMAIN, tech: ..., agents: [...], keywords: [...]})
+  Set search_mode = "targeted"
+  Log: "Targeted mode: focusing on {domain}/{tech}"
+→ END-IF
+- `5`: IF($RAW_INPUT empty) →
+  Set search_mode = "discovery"
+  Use full project analysis workflow
+  Log: "Discovery mode: full project analysis"
+→ END-IF
+- `6`: Store search mode for use in subsequent phases
+
+# Phase1 temporal context and web cache
 GOAL(Get current date/year for temporal context AND check vector memory cache for recent patterns)
-<example>
-<phase name="1">Bash(date +"%Y-%m-%d") → [STORE-AS($)] → END-Bash</phase>
-<phase name="2">Bash(date +"%Y") → [STORE-AS($)] → END-Bash</phase>
-<phase name="3">PARALLEL: Check vector memory cache while temporal context loads</phase>
-<phase name="4">mcp__vector-memory__search_memories('{query: "multi-agent architecture patterns", category: "learning", limit: 3}')</phase>
-<phase name="5">IF(cache_hit AND cache_age < 30 days) → THEN → [STORE-AS($ = 'Cached industry patterns from vector memory') → STORE-AS($ = 'true') → STORE-AS($ = '{days}') → Log: "Using cached patterns (age: {days} days)"] → END-IF</phase>
-<phase name="6">IF(no_cache OR cache_old) → THEN → [STORE-AS($ = 'false') → Log: "Fresh web search required"] → END-IF</phase>
-</example>
-</guideline>
-<guideline id="phase1.5-web-search-best-practices">
+- `1`: Bash(date +"%Y-%m-%d") → [STORE-AS($CURRENT_DATE)] → END-Bash
+- `2`: Bash(date +"%Y") → [STORE-AS($CURRENT_YEAR)] → END-Bash
+- `3`: PARALLEL: Check vector memory cache while temporal context loads
+- `4`: mcp__vector-memory__search_memories('{query: "multi-agent architecture patterns", category: "learning", limit: 3}')
+- `5`: IF(cache_hit AND cache_age < 30 days) →
+  STORE-AS($CACHED_PATTERNS = Cached industry patterns from vector memory)
+  STORE-AS($CACHE_VALID = true)
+  STORE-AS($CACHE_AGE = {days})
+  Log: "Using cached patterns (age: {days} days)"
+→ END-IF
+- `6`: IF(no_cache OR cache_old) →
+  STORE-AS($CACHE_VALID = false)
+  Log: "Fresh web search required"
+→ END-IF
+
+# Phase1.5 web search best practices
 
 GOAL(Delegate industry best practices research to WebResearchMaster with cache awareness)
 NOTE(Delegated to WebResearchMaster for industry research)
 
-<example>
-<phase name="1">IF(search_mode === "discovery") → THEN → [Task(@agent-, 'INPUT(STORE-GET($) && STORE-GET($) && STORE-GET($) && STORE-GET($))', 'TASK → [IF(cache_valid === true) → THEN → Use cached patterns, skip web search → END-IF → IF(cache_valid === false) → THEN → [ →   Research: multi-agent system architecture best practices {year} →   Research: AI agent orchestration patterns {year} →   Research: domain-driven agent design principles {year} →   Synthesize findings into unified patterns → ] → END-IF] → END-TASK', 'OUTPUT({architecture: [...], orchestration: [...], domain_design: [...], sources: [...], cache_used: true|false})', 'STORE-AS($)') → IF(fresh research performed) → Store results in vector memory → mcp__vector-memory__store_memory('{content: $INDUSTRY_PATTERNS, category: "learning", tags: ["agent-patterns", "best-practices", "{CURRENT_YEAR}"]}')] → END-IF</phase>
-<phase name="2">IF(search_mode === "targeted") → THEN → [Use $CACHED_PATTERNS from phase 1 if available → Log: "Targeted mode - using cached patterns, skipping general research"] → END-IF</phase>
-</example>
-</guideline>
-<guideline id="phase2-inventory-agents">
-GOAL(List all existing agents via brain list:masters)
-<example>
-<phase name="1">Bash('brain list:masters') Parse output</phase>
-<phase name="2">STORE-AS($ = '[{id, name, description}, ...]')</phase>
-<phase name="3">Agents located in .brain/node/Agents/*.php</phase>
-<phase name="4">Count: total_agents = count($EXISTING_AGENTS)</phase>
-</example>
-</guideline>
-<guideline id="phase3-read-project-stack">
-GOAL(Extract project technology stack with optional filtering based on $ARGUMENTS)
-<example>Task(@agent-, 'TASK → [(IF(search_mode === "targeted") → THEN → [Priority 1: Focus exploration on $SEARCH_FILTER.domain and $SEARCH_FILTER.tech → Priority 2: Validate against project documentation (.docs/, CLAUDE.md) → Priority 3: Extract related technologies and dependencies] → END-IF + IF(search_mode === "discovery") → THEN → [Priority 1: Explore .docs/ directory if exists. Find all *.md files. → Priority 2: Extract: technologies, frameworks, services, domain requirements → Priority 3: Explore project files in ./ for tech stack (composer.json, package.json, etc.)] → END-IF + STORE-AS($ = \'{technologies: [...], frameworks: [...], services: [...], domain_requirements: [...], primary_stack: "...", confidence: 0-1}\'))] → END-TASK')</example>
-</guideline>
-<guideline id="phase3.5-stack-specific-search">
+- `1`: IF(search_mode === "discovery") →
+  Task(@agent-web-research-master, 'INPUT(STORE-GET($CURRENT_YEAR) && STORE-GET($CACHED_PATTERNS) && STORE-GET($CACHE_VALID) && STORE-GET($CACHE_AGE))', 'TASK →'."\\n"
+    .'  IF(cache_valid === true) → Use cached patterns, skip web search'."\\n"
+    .'  IF(cache_valid === false) →'."\\n"
+    .'  Research: multi-agent system architecture best practices {year}'."\\n"
+    .'  Research: AI agent orchestration patterns {year}'."\\n"
+    .'  Research: domain-driven agent design principles {year}'."\\n"
+    .'  Synthesize findings into unified patterns'."\\n"
+    .'→ END-IF'."\\n"
+    .'→ END-TASK', 'OUTPUT({architecture: [...], orchestration: [...], domain_design: [...], sources: [...], cache_used: true|false})', 'STORE-AS($INDUSTRY_PATTERNS)')
+  IF(fresh research performed) → Store results in vector memory
+  mcp__vector-memory__store_memory('{content: $INDUSTRY_PATTERNS, category: "learning", tags: ["agent-patterns", "best-practices", "{CURRENT_YEAR}"]}')
+→ END-IF
+- `2`: IF(search_mode === "targeted") →
+  Use $CACHED_PATTERNS from phase 1 if available
+  Log: "Targeted mode - using cached patterns, skipping general research"
+→ END-IF
+
+# Phase2 inventory agents
+
+GOAL(List all existing agents and separate SYSTEM agents from PROJECT agents)
+NOTE(SYSTEM agents (use SystemMaster variation): AgentMaster, PromptMaster, CommitMaster, WebResearchMaster, ExploreMaster, DocumentationMaster, VectorMaster, ScriptMaster PROJECT agents (use Master variation): All other agents created for project-specific needs System agents are OFF LIMITS - only inventory, never modify or regenerate)
+
+- `1`: Bash('brain list:masters') Parse output
+- `2`: STORE-AS($ALL_AGENTS = [{id, name, description}, ...])
+- `3`: Filter system agents (names ending with "Master" AND in system list)
+- `4`: STORE-AS($SYSTEM_AGENTS = [AgentMaster, PromptMaster, CommitMaster, WebResearchMaster, ExploreMaster, DocumentationMaster, VectorMaster, ScriptMaster, ...])
+- `5`: Filter project agents (all others)
+- `6`: STORE-AS($PROJECT_AGENTS = [...project-specific agents...])
+- `7`: Agents located in .brain/node/Agents/*.php
+- `8`: Count: system_agents = count($SYSTEM_AGENTS), project_agents = count($PROJECT_AGENTS)
+- `9`: Log: "System agents (protected): {system_count}, Project agents (manageable): {project_count}"
+
+# Phase3 read project stack
+GOAL(Extract project technology stack with optional filtering based on $TARGET_DOMAIN)
+- Task(@agent-explore, 'TASK →'."\\n"
+    .'  IF(search_mode === "targeted") →'."\\n"
+    .'  Priority 1: Focus exploration on $SEARCH_FILTER.domain and $SEARCH_FILTER.tech'."\\n"
+    .'  Priority 2: Validate against project documentation (.docs/, CLAUDE.md)'."\\n"
+    .'  Priority 3: Extract related technologies and dependencies'."\\n"
+    .'→ END-IF'."\\n"
+    .'  IF(search_mode === "discovery") →'."\\n"
+    .'  Priority 1: Explore .docs/ directory if exists. Find all *.md files.'."\\n"
+    .'  Priority 2: Extract: technologies, frameworks, services, domain requirements'."\\n"
+    .'  Priority 3: Explore project files in ./ for tech stack (composer.json, package.json, etc.)'."\\n"
+    .'→ END-IF'."\\n"
+    .'  STORE-AS($PROJECT_STACK = {technologies: [...], frameworks: [...], services: [...], domain_requirements: [...], primary_stack: "...", confidence: 0-1})'."\\n"
+    .'→ END-TASK')
+
+# Phase3.5 stack specific search
 
 GOAL(Delegate technology-specific research to WebResearchMaster based on discovered stack)
 NOTE(Delegated to WebResearchMaster for technology-specific patterns)
 
-<example>
-<phase name="1">Extract primary technologies from $PROJECT_STACK (max 3 most important)</phase>
-<phase name="2">Task(@agent-, 'INPUT(STORE-GET($) && STORE-GET($) && STORE-GET($) && STORE-GET($))', 'TASK → [Extract top 3 most important technologies from stack → IF(search_mode === "targeted") → THEN → Focus on $SEARCH_FILTER tech → END-IF → FOREACH(technology in top_3_technologies) → [ →   IF(technology is major framework/language) → THEN → [ →     Research: {technology} specialized agents best practices {year} →     Research: {technology} multi-agent architecture examples {year} →     Extract: common patterns, agent types, use cases →   ] → END-IF → ] → END-FOREACH → Synthesize per-technology patterns] → END-TASK', 'OUTPUT({tech_patterns: {Laravel: [...], React: [...]}, tech_examples: {...}})', 'STORE-AS($)')</phase>
-<phase name="3">Cache technology patterns in vector memory</phase>
-<phase name="4">mcp__vector-memory__store_memory('{content: $TECH_PATTERNS, category: "learning", tags: ["tech-patterns", $PROJECT_STACK.primary_stack, "{CURRENT_YEAR}"]}')</phase>
-<phase name="5">IF(search_mode === "targeted") → THEN → [Log: "Found {count} patterns for {$SEARCH_FILTER.tech}" → Boost relevance score for matching patterns] → END-IF</phase>
-</example>
-</guideline>
-<guideline id="phase4-gap-analysis-enhanced">
-GOAL(Identify missing domain agents with industry best practices validation and confidence scoring)
-<example>
-<phase name="1">First pass: Web-informed gap analysis</phase>
-<phase name="2">Task(@agent-, 'INPUT(STORE-GET($) && STORE-GET($) && STORE-GET($) && STORE-GET($) && STORE-GET($) && STORE-GET($))', 'TASK → [Gather best practices for agent coverage for the given project stack → Cross-reference with industry patterns from web search → Consider technology-specific agent requirements → IF(search_mode === "targeted") → THEN → [Focus on $SEARCH_FILTER domains only] → END-IF] → END-TASK', 'OUTPUT({covered_domains: [...], missing_agents: [{name: \'AgentName\', purpose: \'...\', capabilities: [...], industry_alignment: 0-1}], confidence: 0-1})')</phase>
-<phase name="3">STORE-AS($)</phase>
-<phase name="4">Second pass: Deep agent-level analysis with industry validation</phase>
-<phase name="5">Task(@agent-, 'INPUT(STORE-GET($) && STORE-GET($) && STORE-GET($) && STORE-GET($) && STORE-GET($) && STORE-GET($) && STORE-GET($))', 'TASK → [Analyze domain expertise needed based on Project requirements → Compare with existing agents → Cross-validate against industry best practices → Validate each proposed agent against INDUSTRY_PATTERNS → Assign confidence score (0-1) to each missing agent recommendation → Prioritize critical gaps with high industry alignment → IF(search_mode === "targeted") → THEN → [Validate $SEARCH_FILTER.agents against project needs] → END-IF → FOREACH(missing domain) → [WebSearch({domain} agent architecture {current_year})] → END-FOREACH] → END-TASK', 'OUTPUT({covered_domains: [...], missing_agents: [{name: \'AgentName\', purpose: \'...\', capabilities: [...], confidence: 0-1, industry_alignment: 0-1, priority: "critical|high|medium"}], industry_coverage_score: 0-1})', 'NOTE(Focus on critical domain gaps with high confidence and industry alignment)')</phase>
-<phase name="6">STORE-AS($)</phase>
-<phase name="7">Filter: Only include agents with confidence >= 0.75 AND industry_alignment >= 0.7</phase>
-<phase name="8">Sort by: priority DESC, confidence DESC, industry_alignment DESC</phase>
-</example>
-</guideline>
-<guideline id="phase5-generate-agents">
-GOAL(Create missing agents (sequential, 1 by 1) with confidence and industry alignment metadata)
-<example>
+- `1`: Extract primary technologies from $PROJECT_STACK (max 3 most important)
+- `2`: Task(@agent-web-research-master, 'INPUT(STORE-GET($PROJECT_STACK.TECHNOLOGIES) && STORE-GET($CURRENT_YEAR) && STORE-GET($SEARCH_FILTER) && STORE-GET($SEARCH_MODE))', 'TASK →'."\\n"
+    .'  Extract top 3 most important technologies from stack'."\\n"
+    .'  IF(search_mode === "targeted") →'."\\n"
+    .'  Focus on STORE-GET($SEARCH_FILTER) tech'."\\n"
+    .'→ END-IF'."\\n"
+    .'  FOREACH(technology in top_3_technologies) →'."\\n"
+    .'  IF(technology is major framework/language) →'."\\n"
+    .'  Research: {technology} specialized agents best practices {year}'."\\n"
+    .'  Research: {technology} multi-agent architecture examples {year}'."\\n"
+    .'  Extract: common patterns, agent types, use cases'."\\n"
+    .'→ END-IF'."\\n"
+    .'→ END-FOREACH'."\\n"
+    .'  Synthesize per-technology patterns'."\\n"
+    .'→ END-TASK', 'OUTPUT({tech_patterns: {Laravel: [...], React: [...]}, tech_examples: {...}})', 'STORE-AS($TECH_PATTERNS)')
+- `3`: Cache technology patterns in vector memory
+- `4`: mcp__vector-memory__store_memory('{content: $TECH_PATTERNS, category: "learning", tags: ["tech-patterns", $PROJECT_STACK.primary_stack, "{CURRENT_YEAR}"]}')
+- `5`: IF(search_mode === "targeted") →
+  Log: "Found {count} patterns for {$SEARCH_FILTER.tech}"
+  Boost relevance score for matching patterns
+→ END-IF
 
-NOTE(Created files must be valid PHP archetypes extending BrainCore\Archetypes\AgentArchetype)
-FOREACH(agent in $GAP_ANALYSIS.missing_agents) → [IF(agent already exists in $EXISTING_AGENTS) → THEN → [SKIP(idempotent - preserving existing)] → END-IF → IF(agent.confidence < 0.75 OR agent.priority === "medium") → THEN → [Log: "Skipping low-confidence agent: {agent.name} (confidence: {agent.confidence})" → SKIP(low confidence or medium priority)] → END-IF → Log: "Generating {agent.name} (confidence: {agent.confidence}, industry_alignment: {agent.industry_alignment}, priority: {agent.priority})" → Bash(brain make:master {AgentName}) → [Creates .brain/node/Agents/{AgentName}.php] → END-Bash → Task(@agent-, 'TASK → [Read(\'.brain/node/Agents/{AgentName}.php\') → Update Purpose attribute based on gap analysis → Include industry best practices from $INDUSTRY_PATTERNS and $TECH_PATTERNS → Add appropriate includes (Universal + custom if needed) → Define agent-specific guidelines and capabilities → Follow existing agent structure (AgentMaster, CommitMaster, etc.) → Add metadata comment: confidence={agent.confidence}, industry_alignment={agent.industry_alignment}] → END-TASK', 'CONTEXT({agent_purpose}, {agent_capabilities} from gap analysis Industry patterns: {$INDUSTRY_PATTERNS} Technology patterns: {$TECH_PATTERNS[relevant_tech]} Confidence score: {agent.confidence})') → REPORT({completed}/{total} agents generated (avg confidence: {avg_confidence}))] → END-FOREACH
+# Phase4 gap analysis
 
-<phase name="1">Store generation summary</phase>
-<phase name="2">STORE-AS($ = '{generated: [...], skipped: [...], avg_confidence: 0-1, total_agents: count}')</phase>
-</example>
-</guideline>
-<guideline id="phase6-compile">
+GOAL(Identify missing PROJECT-SPECIFIC agents (NOT system agents))
+NOTE(Gap analysis compares against PROJECT_AGENTS only, not SYSTEM_AGENTS FORBIDDEN: Suggesting system agents (AgentMaster, PromptMaster, etc.) as missing New agents use Master variation, NOT SystemMaster AgentMaster analyzes gaps using already collected data - no additional web search needed)
+
+- `1`: mcp__sequential-thinking__sequentialthinking('{'."\\n"
+    .'                thought: "Analyzing agent gaps. Comparing: project requirements vs existing agents, industry patterns vs coverage, technology stack vs specialized needs.",'."\\n"
+    .'                thoughtNumber: 1,'."\\n"
+    .'                totalThoughts: 3,'."\\n"
+    .'                nextThoughtNeeded: true'."\\n"
+    .'            }')
+- `2`: AgentMaster performs gap analysis using cached patterns
+- `3`: Task(@agent-agent-master, 'INPUT(STORE-GET($PROJECT_AGENTS) && STORE-GET($SYSTEM_AGENTS) && STORE-GET($PROJECT_STACK) && STORE-GET($INDUSTRY_PATTERNS) && STORE-GET($TECH_PATTERNS) && STORE-GET($SEARCH_FILTER))', 'TASK →'."\\n"
+    .'  Analyze domain expertise needed based on Project requirements'."\\n"
+    .'  Compare with existing PROJECT agents (NOT system agents)'."\\n"
+    .'  EXCLUDE any agent that overlaps with SYSTEM_AGENTS functionality'."\\n"
+    .'  Cross-validate against INDUSTRY_PATTERNS and TECH_PATTERNS (already cached)'."\\n"
+    .'  EXCLUDE: system agent types (orchestration, delegation, memory management)'."\\n"
+    .'  INCLUDE: domain-specific agents (API, Cache, Auth, Payment, etc.)'."\\n"
+    .'  Assign confidence score (0-1) to each missing agent recommendation'."\\n"
+    .'  Prioritize critical gaps with high industry alignment'."\\n"
+    .'  All new agents will use Master variation (NOT SystemMaster)'."\\n"
+    .'  IF(search_mode === "targeted") →'."\\n"
+    .'  Focus on $SEARCH_FILTER domains only'."\\n"
+    .'→ END-IF'."\\n"
+    .'→ END-TASK', 'OUTPUT({covered_domains: [...], missing_agents: [{name: \\'AgentName\\', purpose: \\'...\\', capabilities: [...], confidence: 0-1, industry_alignment: 0-1, priority: "critical|high|medium", variation: "Master"}], industry_coverage_score: 0-1})', 'NOTE(Focus on PROJECT agent gaps with high confidence and industry alignment)')
+- `4`: STORE-AS($GAP_ANALYSIS)
+- `5`: Filter: confidence >= 0.6, industry_alignment >= 0.6, priority != "low"
+- `6`: Validate: NO agent names match SYSTEM_AGENTS list
+- `7`: Sort by: priority DESC, confidence DESC, industry_alignment DESC
+
+# Phase5 parallel generation
+
+GOAL(Create missing PROJECT agents via PARALLEL AgentMaster delegation. Max 5 concurrent AgentMasters.)
+NOTE(Created agents are PROJECT agents using Master variation Created files must be valid PHP archetypes extending BrainCore\\Archetypes\\AgentArchetype FORBIDDEN: Creating any agent that matches SYSTEM_AGENTS list)
+
+- `1`: Step 1: Filter and batch agents
+- `2`: Remove: existing agents, confidence < 0.6, priority === "low" Remove: any agent matching SYSTEM_AGENTS names (AgentMaster, PromptMaster, etc.) Keep: confidence >= 0.6 AND (priority === "critical" OR priority === "high") STORE-AS($FILTERED_AGENTS = [...filtered project agents only...])
+- `3`: Step 2: Batch into groups of 3 (max 5 batches = 15 agents)
+- `4`: batch_1 = agents[0:3], batch_2 = agents[3:6], ... STORE-AS($AGENT_BATCHES = [[batch1], [batch2], [batch3], [batch4], [batch5]])
+- `5`: Step 3: Pre-create all agent files via brain make:master
+- `6`: FOREACH(agent in $FILTERED_AGENTS) →
+  Bash(brain make:master {agent.name}) → [Creates .brain/node/Agents/{agent.name}.php] → END-Bash
+→ END-FOREACH
+- `7`: Step 4: PARALLEL delegation to 5 AgentMasters
+- `8`: CRITICAL: Launch ALL 5 Task() calls in SINGLE message block Each AgentMaster receives batch of 1-3 PROJECT agents to configure AgentMasters work CONCURRENTLY, not sequentially All agents use Master variation (for project agents)
+- `9`: FOREACH(batch in $AGENT_BATCHES (PARALLEL)) →
+  Task(@agent-agent-master, 'INPUT(batch_agents = [{name, purpose, capabilities, confidence, variation: "Master"}, ...] && STORE-GET($INDUSTRY_PATTERNS) && STORE-GET($TECH_PATTERNS) && STORE-GET($PROJECT_AGENTS))', 'TASK →'."\\n"
+    .'  FOREACH agent in batch_agents:'."\\n"
+    .'    1. Read created file: .brain/node/Agents/{agent.name}.php'."\\n"
+    .'    2. Update #[Purpose()] with detailed domain expertise'."\\n"
+    .'    3. Add #[Includes(Master::class)] for project agent variation'."\\n"
+    .'    4. Add project-specific includes from .brain/node/Includes/'."\\n"
+    .'    5. Define rules + guidelines in handle()'."\\n"
+    .'    6. Use PHP API only (Runtime::, Operator::, Store::)'."\\n"
+    .'  Return: {`completed`: [...], failed: [...]}'."\\n"
+    .'→ END-TASK', 'OUTPUT({batch_id, `completed`: [names], failed: [names], errors: [...]})')
+→ END-FOREACH
+- `10`: Step 5: Aggregate results from all AgentMasters
+- `11`: Merge: all `completed` PROJECT agents from 5 AgentMaster responses Collect: all failures for error report STORE-AS($GENERATION_SUMMARY = {generated: [...], failed: [...], total: N, variation: "Master"})
+
+# Phase6 compile
 GOAL(Compile all agents to .claude/agents/)
-<example>
-<phase name="1">Bash(brain compile) → [Compiles .brain/node/Agents/*.php to .claude/agents/] → END-Bash</phase>
-<phase name="2">VERIFY-SUCCESS(CHECK(.claude/agents/ for new agent files) Compilation completed without errors)</phase>
-<phase name="3">Log: "Compilation complete. New agents available in {AGENTS_FOLDER}"</phase>
-</example>
-</guideline>
-<guideline id="phase7-report-enhanced">
+- `1`: Bash(brain compile) → [Compiles .brain/node/Agents/*.php to .claude/agents/] → END-Bash
+- `2`: VERIFY-SUCCESS(CHECK(.claude/agents/ for new agent files) Compilation `completed` without errors)
+- `3`: Log: "Compilation complete. New agents available in {AGENTS_FOLDER}"
+
+# Phase7 report enhanced
 GOAL(Report generation results with confidence scores, industry alignment, and caching status)
-<example>
-<phase name="1">IF(agents_generated > 0) → THEN → [Calculate: avg_confidence = average(generated_agents.confidence) → Calculate: avg_industry_alignment = average(generated_agents.industry_alignment) → mcp__vector-memory__store_memory('{content: "Init Gap Analysis: mode={search_mode}, technologies={$PROJECT_STACK.technologies}, agents_generated={agents_count}, avg_confidence={avg_confidence}, avg_industry_alignment={avg_industry_alignment}, coverage=improved, date={$CURRENT_DATE}", category: "architecture", tags: ["init", "gap-analysis", "agents", "{CURRENT_YEAR}"]}') → OUTPUT(Generation summary with agent details, confidence scores, and industry alignment metrics)] → END-IF</phase>
-<phase name="2">IF(agents_generated === 0) → THEN → [mcp__vector-memory__store_memory('{content: "Init Gap Analysis: mode={search_mode}, result=full_coverage, agents={agents_count}, date={$CURRENT_DATE}", category: "architecture", tags: ["init", "full-coverage", "{CURRENT_YEAR}"]}') → OUTPUT(Full coverage confirmation with existing agent list and industry coverage score)] → END-IF</phase>
-<phase name="3">Include cache performance metrics: {cache_hits}, {web_searches_performed}</phase>
-</example>
-</guideline>
-<guideline id="response-format-a-enhanced">
-<text>Response when Agents Generated</text>
-<example>Init Gap Analysis Complete</example>
-<example>Mode: {search_mode} (targeted|discovery)</example>
-<example>
-Agents Generated: {agents_count}
-<phase name="Created in">.brain/node/Agents/</phase>
-<phase name="Compiled to">.claude/agents/</phase>
-</example>
-<example>New domains: {list_of_new_agent_names}</example>
-<example>
-Quality Metrics:
-<phase name="1">Average confidence: {avg_confidence} (0-1 scale)</phase>
-<phase name="2">Average industry alignment: {avg_industry_alignment} (0-1 scale)</phase>
-<phase name="3">Priority breakdown: {critical_count} critical, {high_count} high</phase>
-</example>
-<example>
-Coverage Improved:
-<phase name="1">Technologies: {technologies_list}</phase>
-<phase name="2">Industry coverage score: {industry_coverage_score} (0-1 scale)</phase>
-<phase name="3">Total agents: {total_agents_count} (was: {old_count})</phase>
-</example>
-<example>Preserved: {existing_agents_count} existing agents</example>
-<example>
-Performance:
-<phase name="1">Cache hits: {cache_hits}</phase>
-<phase name="2">Web searches: {web_searches_count} (delegated to WebResearchMaster)</phase>
-<phase name="3">Skipped agents: {skipped_count} (low confidence or medium priority)</phase>
-</example>
-<example>
-Next Steps:
-<phase name="1">Review generated agents in .brain/node/Agents/</phase>
-<phase name="2">Customize agent capabilities if needed</phase>
-<phase name="3">Recompile: brain compile (if customized)</phase>
-<phase name="4">Agents are ready to use via Task(@agent- '...')</phase>
-</example>
-</guideline>
-<guideline id="response-format-b-enhanced">
-<text>Response when Full Coverage (no gaps detected)</text>
-<example>Init Gap Analysis Complete</example>
-<example>Mode: {search_mode} (targeted|discovery)</example>
-<example>Status: Full domain coverage</example>
-<example>Existing Agents: {agents_count}</example>
-<example>{list_existing_agents_with_descriptions}</example>
-<example>
-Stack Coverage:
-<phase name="1">Brain requirements: COVERED</phase>
-<phase name="2">Project stack: {technologies_list}</phase>
-<phase name="3">Domain expertise: COMPLETE</phase>
-<phase name="4">Industry coverage score: {industry_coverage_score} (0-1 scale)</phase>
-</example>
-<example>
-Industry Validation:
-<phase name="1">Multi-agent patterns: ALIGNED</phase>
-<phase name="2">Technology-specific agents: ALIGNED</phase>
-<phase name="3">Best practices compliance: {compliance_score}</phase>
-</example>
-<example>
-Performance:
-<phase name="1">Cache hits: {cache_hits}</phase>
-<phase name="2">Web searches: {web_searches_count} (delegated to WebResearchMaster)</phase>
-</example>
-<example>No new agents needed → System ready</example>
-</guideline>
-<guideline id="memory-optimization">
-<text>Cache web research results for faster repeated runs</text>
-<example>
-<phase name="1">Before web search: Check vector memory for cached patterns</phase>
-<phase name="2">Query patterns: "multi-agent architecture patterns", "{tech} agent patterns"</phase>
-<phase name="3">Cache TTL: 30 days for industry patterns, 14 days for technology patterns</phase>
-<phase name="4">IF(cache_hit AND cache_age < TTL) → THEN → [Use cached patterns → Pass cache context to WebResearchMaster → Log: "Cache hit: {pattern_type} (age: {days} days)" → WebResearchMaster skips web search] → END-IF</phase>
-<phase name="5">IF(cache_miss OR cache_expired) → THEN → [Delegate to WebResearchMaster for fresh research → Store results with category: "learning" → Tag: ["agent-patterns", "best-practices", "{tech}", "{CURRENT_YEAR}"] → Log: "Cache miss: performing web search via WebResearchMaster"] → END-IF</phase>
-<phase name="6">Post-analysis: Store gap analysis results for project context</phase>
-<phase name="7">mcp__vector-memory__store_memory('{content: "Gap analysis for {project}: {summary}", category: "architecture", tags: ["gap-analysis", "{technologies}"]}')</phase>
-</example>
-</guideline>
-<guideline id="error-recovery-enhanced">
-<text>Error handling scenarios with graceful degradation</text>
-<example>
-<phase name="1">IF(no .docs/ found) → THEN → [Use Brain context only → Continue with gap analysis → Log: "No .docs/ - using Brain context"] → END-IF</phase>
-<phase name="2">IF(agent already exists) → THEN → [SKIP(generation) → LOG as preserved → Continue with next agent] → END-IF</phase>
-<phase name="3">IF(brain make:master fails) → THEN → [LOG error → SKIP(this agent) → Continue with remaining agents] → END-IF</phase>
-<phase name="4">IF(brain compile fails) → THEN → [Report compilation errors → List failed agents → Manual intervention required] → END-IF</phase>
-<phase name="5">IF(@agent- fails) → THEN → [Report error → Suggest manual agent creation → Continue with next agent] → END-IF</phase>
-<phase name="6">IF(web search timeout) → THEN → [WebResearchMaster handles timeout internally → Falls back to vector memory cached patterns → Continues with available data → Marks analysis as "partial" in report → Log: "Web search timeout - using cached data only"] → END-IF</phase>
-<phase name="7">IF(no internet connection) → THEN → [WebResearchMaster reports unavailable → Skip all web search phases → Use local project analysis only → Use cached patterns from vector memory → Warn user: "Limited coverage validation - no internet connection" → Continue with reduced confidence scores (-0.2 penalty)] → END-IF</phase>
-<phase name="8">IF(vector memory unavailable) → THEN → [Skip caching operations → WebResearchMaster performs all web searches (no cache hits) → Continue without storing results → Log: "Vector memory unavailable - no caching"] → END-IF</phase>
-<phase name="9">IF(low confidence for all proposed agents) → THEN → [Request additional context from user → Suggest manual review of project requirements → Output: "Unable to confidently identify missing agents. Manual review recommended."] → END-IF</phase>
-<phase name="10">REPORT({successful_count}/{total_count} agents generated (avg confidence: {avg_confidence}))</phase>
-</example>
-</guideline>
-<guideline id="quality-gates-enhanced">
-<text>Quality validation checkpoints with confidence thresholds</text>
-<example>Gate 1: Temporal context retrieved (date/year)</example>
-<example>Gate 2: Vector memory cache checked for recent patterns</example>
-<example>Gate 3: brain list:masters executed successfully</example>
-<example>Gate 4: Web research delegated to WebResearchMaster OR cache hit</example>
-<example>Gate 5: Gap analysis completed with valid output structure</example>
-<example>Gate 6: Gap analysis includes confidence scores >= 0.75 for critical agents</example>
-<example>Gate 7: Industry alignment scores >= 0.7 for all proposed agents</example>
-<example>Gate 8: brain make:master creates valid PHP archetype</example>
-<example>Gate 9: brain compile completes without errors</example>
-<example>Gate 10: Generated agents appear in .claude/agents/</example>
-<example>Gate 11: Generation summary includes quality metrics (confidence, industry_alignment)</example>
-</guideline>
-<guideline id="example-1-targeted-mode">
-SCENARIO(User provides: "missing agent for Laravel" → Targeted mode)
-<example>
-<phase name="input">$ARGUMENTS = "missing agent for Laravel"</phase>
-<phase name="parse">target_domain = "Laravel", search_mode = "targeted"</phase>
-<phase name="delegation">WebResearchMaster: Focus on Laravel-specific agent patterns</phase>
-<phase name="result">Gap detected: Laravel expertise missing (confidence: 0.92, industry_alignment: 0.88)</phase>
-<phase name="action">brain make:master LaravelMaster → (Edit Purpose with industry patterns + Guidelines from best practices) → Compile</phase>
-<phase name="output">LaravelMaster agent available (confidence: 0.92)</phase>
-</example>
-</guideline>
-<guideline id="example-2-discovery-mode">
-SCENARIO(No arguments → Full discovery mode with web research delegation)
-<example>
-<phase name="input">$ARGUMENTS empty, search_mode = "discovery"</phase>
-<phase name="delegation">WebResearchMaster: Industry patterns for multi-agent architecture (2025)</phase>
-<phase name="analysis">Project uses React + Node.js, no React agent exists</phase>
-<phase name="validation">Industry patterns confirm: Frontend specialization needed (confidence: 0.87)</phase>
-<phase name="action">brain make:master ReactMaster → Compile</phase>
-<phase name="result">ReactMaster agent available via Task(@agent- '...') (confidence: 0.87, industry_alignment: 0.85)</phase>
-</example>
-</guideline>
-<guideline id="example-3-cache-hit">
-SCENARIO(Repeated run with cached patterns)
-<example>
-<phase name="input">Second run within 30 days</phase>
-<phase name="cache">Cache hit: "multi-agent architecture patterns" (age: 5 days)</phase>
-<phase name="delegation">WebResearchMaster: Skip web search, use cached patterns</phase>
-<phase name="performance">No web searches needed, used cached data</phase>
-<phase name="analysis">All domains covered by existing agents</phase>
-<phase name="result">REPORT("No gaps detected → System ready" with agent list (cache_hits: 1, web_searches: 0, delegation_count: 2))</phase>
-</example>
-</guideline>
-<guideline id="example-4-low-confidence-filter">
-SCENARIO(Gap analysis with low confidence agents filtered out)
-<example>
-<phase name="input">Full discovery mode</phase>
-<phase name="delegation">WebResearchMaster + AgentMaster: Comprehensive gap analysis</phase>
-<phase name="analysis">Found 5 potential gaps: 3 high confidence (>0.75), 2 low confidence (<0.75)</phase>
-<phase name="filter">Removed 2 low-confidence agents</phase>
-<phase name="generation">Generated 3 agents with avg confidence: 0.84</phase>
-<phase name="output">Report: "3 agents generated, 2 skipped (low confidence), delegation_count: 3"</phase>
-</example>
-</guideline>
-<guideline id="directive">
-<text>Generate ONLY missing agents! Preserve existing! Use brain make:master ONLY! Delegate web research to WebResearchMaster! Cache patterns! Validate with industry standards! Report confidence scores! Compile after generation!</text>
-</guideline>
-</guidelines>
+- `1`: IF(agents_generated > 0) →
+  Calculate: avg_confidence = average(generated_agents.confidence)
+  Calculate: avg_industry_alignment = average(generated_agents.industry_alignment)
+  mcp__vector-memory__store_memory('{content: "Init Gap Analysis: mode={search_mode}, technologies={$PROJECT_STACK.technologies}, agents_generated={agents_count}, avg_confidence={avg_confidence}, avg_industry_alignment={avg_industry_alignment}, coverage=improved, date={$CURRENT_DATE}", category: "architecture", tags: ["init", "gap-analysis", "agents", "{CURRENT_YEAR}"]}')
+  OUTPUT(Generation summary with agent details, confidence scores, and industry alignment metrics)
+→ END-IF
+- `2`: IF(agents_generated === 0) →
+  mcp__vector-memory__store_memory('{content: "Init Gap Analysis: mode={search_mode}, result=full_coverage, agents={agents_count}, date={$CURRENT_DATE}", category: "architecture", tags: ["init", "full-coverage", "{CURRENT_YEAR}"]}')
+  OUTPUT(Full coverage confirmation with existing agent list and industry coverage score)
+→ END-IF
+- `3`: Include cache performance metrics: {cache_hits}, {web_searches_performed}
+
+# Response format
+Response structure
+- Header: Init Gap Analysis Complete | Mode: {search_mode}
+- System Agents (protected): {system_count} | Variation: SystemMaster
+- Project Agents Generated: {count} | Variation: Master
+- Quality: confidence={avg}, alignment={avg}
+- Performance: cache_hits={n}, parallel_batches={n}
+- `1`: Created: .brain/node/Agents/ | Compiled: .claude/agents/
+- `2`: Ready via: [DELEGATE] @agent-{name}: '...'
+
+# Error recovery
+Graceful degradation
+- no .docs/ → Brain context only, continue
+- agent exists → skip, log preserved
+- system agent suggested → skip, log "system agent protected"
+- make:master fails → skip agent, continue
+- compile fails → report errors, list failed
+- AgentMaster fails → skip batch, continue
+- web timeout → use cached, mark partial
+- no internet → local only, -0.2 confidence
+- memory unavailable → skip cache, continue
+
+# Quality gates
+Validation checkpoints
+- Gate 1-3: temporal context, cache check, list:masters
+- Gate 4: system vs project agents separated
+- Gate 5-6: web delegation, gap analysis output
+- Gate 7: NO system agents in GAP_ANALYSIS.missing_agents
+- Gate 8-9: confidence >= 0.6, alignment >= 0.6
+- Gate 10-11: make:master `success`, compile `success`
+- Gate 12: .claude/agents/ populated with project agents
+
+# Example parallel batch
+SCENARIO(System: 8 protected (SystemMaster) | Project: 10 discovered → 4 batches → 4 parallel AgentMasters)
+- `inventory`: System agents (OFF LIMITS): AgentMaster, PromptMaster, CommitMaster, ExploreMaster, WebResearchMaster, DocumentationMaster, VectorMaster, ScriptMaster
+- `gap`: 10 missing PROJECT agents: API, Cache, Queue, Auth, Payment, Report, Search, Export, Import, Sync
+- `variation`: All new agents use Master variation (NOT SystemMaster)
+- `batch`: batch_1=[API,Cache,Queue], batch_2=[Auth,Payment,Report], batch_3=[Search,Export], batch_4=[Import,Sync]
+- `parallel`: Launch 4 Task(@agent-agent-master) in SINGLE message
+- `result`: All 10 PROJECT agents created with Master variation in ~1 AgentMaster cycle
+
+# Directive
+PROJECT agents ONLY! Master variation! NEVER touch system agents! DELEGATE to AgentMaster! PARALLEL batches! brain make:master! Compile!
+
 </command>

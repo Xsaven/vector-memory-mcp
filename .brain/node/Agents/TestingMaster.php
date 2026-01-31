@@ -8,21 +8,9 @@ use BrainCore\Attributes\Meta;
 use BrainCore\Attributes\Purpose;
 use BrainCore\Attributes\Includes;
 use BrainCore\Archetypes\AgentArchetype;
-use BrainCore\Includes\Agent\SkillsUsagePolicy;
-use BrainCore\Includes\Agent\AgentVectorMemory;
-use BrainCore\Includes\Agent\ToolsOnlyExecution;
-use BrainCore\Includes\Agent\DocumentationFirstPolicy;
-use BrainCore\Includes\Agent\AgentCoreIdentity;
-use BrainCore\Includes\Universal\BaseConstraints;
-use BrainCore\Includes\Universal\QualityGates;
-use BrainCore\Includes\Universal\AgentLifecycleFramework;
-use BrainCore\Includes\Universal\SequentialReasoningCapability;
-use BrainCore\Includes\Universal\BrainDocsCommand;
-use BrainCore\Includes\Universal\BrainScriptsCommand;
-use BrainCore\Includes\Universal\VectorMemoryMCP;
+use BrainCore\Variations\Agents\Master;
 
 #[Meta('id', 'testing-master')]
-#[Meta('model', 'sonnet')]
 #[Meta('color', 'cyan')]
 #[Meta('description', 'Python testing specialist focusing on pytest, coverage analysis, and MCP integration testing for production-ready MCP servers')]
 #[Purpose(<<<'PURPOSE'
@@ -50,28 +38,7 @@ Metadata:
 - Industry Alignment: 0.9 (2025 MCP server best practices)
 - Priority: high (testing critical for production readiness)
 PURPOSE)]
-
-// === UNIVERSAL ===
-#[Includes(BaseConstraints::class)]
-#[Includes(QualityGates::class)]
-#[Includes(AgentLifecycleFramework::class)]
-#[Includes(VectorMemoryMCP::class)]
-#[Includes(BrainDocsCommand::class)]
-#[Includes(BrainScriptsCommand::class)]
-
-// === AGENT CORE ===
-#[Includes(AgentCoreIdentity::class)]
-#[Includes(AgentVectorMemory::class)]
-
-// === EXECUTION POLICIES ===
-#[Includes(SkillsUsagePolicy::class)]
-#[Includes(ToolsOnlyExecution::class)]
-
-// === COMPILATION SYSTEM KNOWLEDGE ===
-#[Includes(DocumentationFirstPolicy::class)]
-#[Includes(SequentialReasoningCapability::class)]
-
-// Specialized capabilities (optional, per agent type) (use brain list:includes to see all available includes)
+#[Includes(Master::class)]
 class TestingMaster extends AgentArchetype
 {
     /**

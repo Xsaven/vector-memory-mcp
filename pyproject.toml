@@ -1,6 +1,6 @@
 [project]
 name = "vector-memory-mcp"
-version = "1.0.0"
+version = "1.0.3"
 description = "A secure, vector-based memory server for Claude Desktop using sqlite-vec and sentence-transformers"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -34,6 +34,7 @@ dependencies = [
     "mcp>=0.3.0",
     "sqlite-vec>=0.1.6",
     "sentence-transformers>=2.2.2",
+    "requests>=2.28.0",
 ]
 
 [project.urls]
