@@ -96,9 +96,9 @@
         },
         "availableModels": {
             "type": "string",
-            "description": "Available models from all clients: claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5, gpt-5.1-codex-max, gpt-5.1-codex, gpt-5.1-codex-mini, gpt-5.1, gpt-5.2-codex-max, gpt-5.2-codex, gpt-5.2-codex-mini...",
+            "description": "Available models from all clients: claude-opus-4-6, claude-sonnet-4-5, claude-haiku-4-5, gpt-5.1-codex-max, gpt-5.1-codex, gpt-5.1-codex-mini, gpt-5.1, gpt-5.2-codex-max, gpt-5.2-codex, gpt-5.2-codex-mini...",
             "enum": [
-                "claude-opus-4-5",
+                "claude-opus-4-6",
                 "claude-sonnet-4-5",
                 "claude-haiku-4-5",
                 "gpt-5.1-codex-max",
@@ -134,6 +134,7 @@
                 "meta-llama/llama-guard-4-12b",
                 "openai/gpt-oss-120b",
                 "zai-coding-plan/glm-4.7",
+                "zai-coding-plan/glm-5.0",
                 "opencode/glm-4.7-free",
                 "opencode/big-pickle",
                 "opencode/grok-code",
@@ -148,7 +149,7 @@
                 "google/gemini-3-pro-preview",
                 "google/gemini-3-flash-preview",
                 "github-copilot/claude-sonnet-4.5",
-                "github-copilot/claude-opus-4.5",
+                "github-copilot/claude-opus-4.6",
                 "github-copilot/claude-haiku-4.5",
                 "github-copilot/gemini-3-flash-preview",
                 "github-copilot/gemini-3-pro-preview",
@@ -396,6 +397,10 @@
                     "type": "string",
                     "description": "Model constant: GLM47 (OpenCode CLI)"
                 },
+                "$_model.GLM50": {
+                    "type": "string",
+                    "description": "Model constant: GLM50 (OpenCode CLI)"
+                },
                 "$_model.GLM47_FREE": {
                     "type": "string",
                     "description": "Model constant: GLM47_FREE (OpenCode CLI)"
@@ -532,6 +537,7 @@
                 "$_model.OPENAI_GPT_OSS_120B",
                 "$_model.OPENAI_GPT_OSS_20B",
                 "$_model.GLM47",
+                "$_model.GLM50",
                 "$_model.GLM47_FREE",
                 "$_model.BIG_PICKLE_FREE",
                 "$_model.GROK_CODE_FREE",
@@ -615,6 +621,7 @@
                 "$_model.OPENAI_GPT_OSS_120B",
                 "$_model.OPENAI_GPT_OSS_20B",
                 "$_model.GLM47",
+                "$_model.GLM50",
                 "$_model.GLM47_FREE",
                 "$_model.BIG_PICKLE_FREE",
                 "$_model.GROK_CODE_FREE",
@@ -1982,7 +1989,7 @@
                     "type": "string",
                     "description": "Override the default model for this execution. Model availability depends on client.",
                     "examples": [
-                        "claude-opus-4-5",
+                        "claude-opus-4-6",
                         "claude-sonnet-4-5",
                         "claude-haiku-4-5",
                         "gpt-5.1-codex-max",
@@ -2018,6 +2025,7 @@
                         "meta-llama/llama-guard-4-12b",
                         "openai/gpt-oss-120b",
                         "zai-coding-plan/glm-4.7",
+                        "zai-coding-plan/glm-5.0",
                         "opencode/glm-4.7-free",
                         "opencode/big-pickle",
                         "opencode/grok-code",
@@ -2032,7 +2040,7 @@
                         "google/gemini-3-pro-preview",
                         "google/gemini-3-flash-preview",
                         "github-copilot/claude-sonnet-4.5",
-                        "github-copilot/claude-opus-4.5",
+                        "github-copilot/claude-opus-4.6",
                         "github-copilot/claude-haiku-4.5",
                         "github-copilot/gemini-3-flash-preview",
                         "github-copilot/gemini-3-pro-preview",

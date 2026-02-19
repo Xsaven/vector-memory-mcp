@@ -157,6 +157,25 @@ class Config:
     MAX_TAG_LENGTH = 100
     MAX_TAGS_PER_MEMORY = 10
 
+    # Tag normalization
+    TAG_SIMILARITY_THRESHOLD = 0.90
+    TAG_RELATED_THRESHOLD = 0.85
+    TAG_SUBSTRING_BOOST = 0.03  # Boost for substring tags (conservative)
+
+    # Substring boost stop-words (too generic, never boost)
+    TAG_SUBSTRING_STOP_WORDS = {
+        'api', 'ui', 'db', 'test', 'auth', 'infra', 'ci', 'cd',
+        'app', 'lib', 'sdk', 'cli', 'gui', 'web', 'sql', 'orm',
+        'log', 'cfg', 'env', 'dev', 'prod', 'stg'
+    }
+    TAG_SUBSTRING_MIN_LENGTH = 4  # Min length for substring boost
+
+    # Colon tag whitelist prefixes (structured tags)
+    ALLOWED_COLON_PREFIXES = {
+        'type', 'domain', 'strict', 'cognitive', 'batch',
+        'module', 'vendor', 'priority', 'scope', 'layer'
+    }
+
     # Database configuration
     DB_NAME = "vector_memory.db"
     EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -164,6 +183,10 @@ class Config:
     
     # Memory categories
     MEMORY_CATEGORIES = MemoryCategory.list_values()
+
+    # Category normalization
+    CATEGORY_SIMILARITY_THRESHOLD = 0.50
+    CATEGORY_MIN_MARGIN = 0.10  # Best must be this much better than "other"
 
 
 @dataclass

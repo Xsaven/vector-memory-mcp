@@ -1,0 +1,44 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    "mcp": {
+        "context7": {
+            "type": "local",
+            "command": [
+                "npx",
+                "-y",
+                "@upstash/context7-mcp",
+                "--api-key",
+                "ctx7sk-d066fdcb-bd7e-4e10-acf4-522c7621e2c4"
+            ]
+        },
+        "sequential-thinking": {
+            "type": "local",
+            "command": [
+                "npx",
+                "-y",
+                "@modelcontextprotocol/server-sequential-thinking"
+            ]
+        },
+        "vector-memory": {
+            "type": "local",
+            "command": [
+                "/Users/xsaven/PhpstormProjects/vector-memory-mcp/run-arm64.sh",
+                "--working-dir",
+                "/Users/xsaven/PhpstormProjects/vector-memory-mcp",
+                "--memory-limit",
+                "100000"
+            ]
+        },
+        "vector-task": {
+            "type": "local",
+            "command": [
+                "uvx",
+                "vector-task-mcp",
+                "--working-dir",
+                "/Users/xsaven/PhpstormProjects/vector-memory-mcp",
+                "--timezone",
+                "Europe/Kyiv"
+            ]
+        }
+    }
+}

@@ -11,9 +11,11 @@ import sqlite3
 import sqlite_vec
 import json
 import os
+import re
+import numpy as np
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Set
 
 from .models import MemoryEntry, MemoryCategory, SearchResult, MemoryStats, Config
 from .security import (
@@ -24,10 +26,175 @@ from .security import (
 from .embeddings import get_embedding_model, EmbeddingModel
 
 
+def _normalize_tag_for_embedding(tag: str) -> str:
+    """
+    Normalize tag for embedding comparison.
+    
+    - lowercase
+    - replace _ - with space
+    - normalize version prefixes (version/ver -> v)
+    - add space after v before digit (v2 -> v 2)
+    """
+    tag = tag.lower()
+    tag = re.sub(r'[-_]+', ' ', tag)
+    tag = re.sub(r'\bversion\b', 'v', tag)
+    tag = re.sub(r'\bver\b', 'v', tag)
+    tag = re.sub(r'\bv(\d)', r'v \1', tag)
+    tag = ' '.join(tag.split())
+    return tag
+
+
+def _extract_version(tag: str) -> Optional[str]:
+    """
+    Extract version number from tag.
+    
+    Matches: v1, v2.0, v1.2.3, version 2, ver 3.0
+    Returns normalized version like '1', '2.0', '1.2.3' or None
+    """
+    tag_lower = tag.lower()
+    tag_lower = re.sub(r'[-_]+', ' ', tag_lower)
+    
+    patterns = [
+        r'\bv\s*(\d+(?:\.\d+)*)',
+        r'\bversion\s+(\d+(?:\.\d+)*)',
+        r'\bver\s+(\d+(?:\.\d+)*)',
+        r'\bapi\s+(\d+(?:\.\d+)*)',
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, tag_lower)
+        if match:
+            return _normalize_version_number(match.group(1))
+    return None
+
+
+def _normalize_version_number(version: str) -> str:
+    """Normalize version number: 2 -> 2.0, 2.0 -> 2.0, 01 -> 1"""
+    parts = version.split('.')
+    parts = [str(int(p)) for p in parts]
+    if len(parts) == 1:
+        parts.append('0')
+    return '.'.join(parts)
+
+
+def _extract_numbers(tag: str) -> Set[str]:
+    """
+    Extract all numbers from tag.
+    
+    Returns set of normalized numbers as strings.
+    """
+    tag_lower = tag.lower()
+    tag_lower = re.sub(r'[-_]+', ' ', tag_lower)
+    numbers = re.findall(r'\b(\d+(?:\.\d+)?)\b', tag_lower)
+    return {_normalize_version_number(n) for n in numbers}
+
+
+def _split_colon_tag(tag: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Split tag by colon into prefix and suffix.
+    
+    Args:
+        tag: Tag string (e.g., "type:refactor")
+        
+    Returns:
+        Tuple of (prefix, suffix) or (None, None) if no colon
+    """
+    if ':' in tag:
+        parts = tag.split(':', 1)
+        if len(parts) == 2:
+            return parts[0].lower().strip(), parts[1].lower().strip()
+    return None, None
+
+
+def _can_merge_tags(tag1: str, tag2: str, similarity: float) -> bool:
+    """
+    Check if two tags can be merged based on semantic similarity and guards.
+    
+    Guards:
+    - Version guard: different versions never merge
+    - Colon guard: same prefix, different suffix → NO MERGE
+    - Prefix guard: structured vs plain → NO MERGE  
+    - Number guard: different numbers rarely merge
+    - Substring boost: if one tag is subset of other (with restrictions)
+    """
+    v1 = _extract_version(tag1)
+    v2 = _extract_version(tag2)
+    
+    # Different versions: never merge
+    if v1 is not None and v2 is not None and v1 != v2:
+        return False
+    
+    t1_lower = tag1.lower()
+    t2_lower = tag2.lower()
+    
+    # Colon guard: extract prefix:suffix
+    prefix1, suffix1 = _split_colon_tag(t1_lower)
+    prefix2, suffix2 = _split_colon_tag(t2_lower)
+    
+    # Same prefix, different suffix -> NO MERGE (type:refactor vs type:bug)
+    if prefix1 and prefix2 and prefix1 == prefix2 and suffix1 != suffix2:
+        return False
+    
+    # Prefix asymmetry guard: structured vs plain -> NO MERGE (type:refactor vs refactor)
+    if (prefix1 and not prefix2) or (prefix2 and not prefix1):
+        return False
+    
+    # Substring boost for non-versioned, non-structured tags
+    if v1 is None and v2 is None and prefix1 is None and prefix2 is None:
+        nums1 = _extract_numbers(tag1)
+        nums2 = _extract_numbers(tag2)
+        
+        if not nums1 and not nums2:
+            words1 = set(t1_lower.split())
+            words2 = set(t2_lower.split())
+            
+            if words1 and words2 and (words1 < words2 or words2 < words1):
+                # Find shorter tag
+                shorter = t1_lower if len(t1_lower) < len(t2_lower) else t2_lower
+                shorter_word = list(words1 if words1 < words2 else words2)[0]
+                
+                # Check restrictions for substring boost
+                can_boost = True
+                
+                # Min length check
+                if len(shorter_word) < Config.TAG_SUBSTRING_MIN_LENGTH:
+                    can_boost = False
+                
+                # Stop-words check
+                if shorter_word in Config.TAG_SUBSTRING_STOP_WORDS:
+                    can_boost = False
+                
+                if can_boost:
+                    similarity = min(1.0, similarity + Config.TAG_SUBSTRING_BOOST)
+    
+    # Same version (or no version): use lower threshold
+    if v1 is not None and v2 is not None and v1 == v2:
+        threshold = Config.TAG_RELATED_THRESHOLD
+    else:
+        threshold = Config.TAG_SIMILARITY_THRESHOLD
+    
+    if similarity < threshold:
+        return False
+    
+    # Check number guard for non-versioned tags
+    if v1 is None and v2 is None:
+        nums1 = _extract_numbers(tag1)
+        nums2 = _extract_numbers(tag2)
+        
+        if nums1 and nums2 and nums1 != nums2:
+            if similarity < 0.95:
+                return False
+    
+    return True
+
+
 class VectorMemoryStore:
     """
     Thread-safe vector memory storage using sqlite-vec.
     """
+    
+    # Pre-computed canonical category embeddings (set on first use)
+    _canonical_categories_embeddings: Optional[Dict[str, List[float]]] = None
     
     def __init__(self, db_path: Path, embedding_model_name: str = None, memory_limit: int = None):
         """
@@ -159,6 +326,22 @@ class VectorMemoryStore:
                 );
             """)
             
+            # Create canonical tags table for semantic normalization
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS canonical_tags (
+                    tag TEXT PRIMARY KEY,
+                    embedding BLOB NOT NULL,
+                    frequency INTEGER DEFAULT 1,
+                    created_at TEXT NOT NULL
+                )
+            """)
+
+            # Migration: add frequency column if not exists (backward compatible)
+            try:
+                conn.execute("ALTER TABLE canonical_tags ADD COLUMN frequency INTEGER DEFAULT 1")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
             # Create indexes for performance
             conn.execute("CREATE INDEX IF NOT EXISTS idx_category ON memory_metadata(category)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_created_at ON memory_metadata(created_at)")
@@ -178,10 +361,273 @@ class VectorMemoryStore:
         conn = sqlite3.connect(str(self.db_path))
         conn.enable_load_extension(True)
         sqlite_vec.load(conn)
-        # Enable WAL mode for safe concurrent access
-        conn.execute("PRAGMA journal_mode=WAL")
         conn.enable_load_extension(False)
         return conn
+
+    def _get_canonical_tags(self, conn: sqlite3.Connection) -> Dict[str, List[float]]:
+        """
+        Load all canonical tags with their embeddings.
+
+        Args:
+            conn: Database connection
+
+        Returns:
+            Dict mapping tag string to embedding vector
+        """
+        results = conn.execute("SELECT tag, embedding FROM canonical_tags").fetchall()
+        return {
+            row[0]: np.frombuffer(row[1], dtype=np.float32).tolist()
+            for row in results
+        }
+
+    def _add_canonical_tag(
+        self, conn: sqlite3.Connection, tag: str, embedding: List[float]
+    ) -> None:
+        """
+        Add a new canonical tag with frequency=1.
+
+        Args:
+            conn: Database connection
+            tag: Canonical tag string
+            embedding: Tag embedding vector
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        embedding_blob = sqlite_vec.serialize_float32(embedding)
+        conn.execute(
+            "INSERT OR IGNORE INTO canonical_tags (tag, embedding, frequency, created_at) VALUES (?, ?, 1, ?)",
+            (tag, embedding_blob, now)
+        )
+
+    def _increment_tag_frequency(self, conn: sqlite3.Connection, tag: str) -> None:
+        """
+        Increment frequency for an existing canonical tag.
+
+        Args:
+            conn: Database connection
+            tag: Canonical tag string
+        """
+        conn.execute(
+            "UPDATE canonical_tags SET frequency = frequency + 1 WHERE tag = ?",
+            (tag,)
+        )
+
+    def _get_tag_weights(self, conn: sqlite3.Connection) -> Dict[str, float]:
+        """
+        Get IDF-based weights for all canonical tags.
+        
+        Weight formula: 1 / log(1 + frequency)
+        - High frequency tags (api, auth) → lower weight
+        - Rare tags (module:terminal) → higher weight
+
+        Args:
+            conn: Database connection
+
+        Returns:
+            Dict mapping tag to weight (0.0 - 1.0)
+        """
+        results = conn.execute("SELECT tag, frequency FROM canonical_tags").fetchall()
+        return {row[0]: 1.0 / np.log(1 + row[1]) for row in results}
+
+    def _normalize_tags_semantic(
+        self, tags: List[str], model: EmbeddingModel, conn: sqlite3.Connection
+    ) -> List[str]:
+        """
+        Normalize tags using semantic similarity to canonical tags with guards.
+
+        Guards prevent merging of:
+        - Different versions (api v1 vs api v2)
+        - Different numbers (unless very high similarity >= 0.95)
+
+        For each tag:
+        1. Normalize for embedding comparison
+        2. Find best matching canonical tag (with guards)
+        3. If mergeable -> use canonical tag, increment frequency
+        4. If not -> add as new canonical tag
+
+        Args:
+            tags: List of tags to normalize
+            model: Embedding model
+            conn: Database connection
+
+        Returns:
+            List of normalized canonical tags
+        """
+        if not tags:
+            return []
+
+        # Load existing canonical tags from DB
+        canonical_tags = self._get_canonical_tags(conn)
+        normalized = []
+        incremented = set()  # Track which tags were incremented in this batch
+
+        for tag in tags:
+            if not tag or not tag.strip():
+                continue
+
+            tag_lower = tag.strip().lower()
+
+            # Exact match in canonical tags
+            if tag_lower in canonical_tags:
+                if tag_lower not in normalized:
+                    normalized.append(tag_lower)
+                    # Increment frequency once per unique tag in this memory
+                    if tag_lower not in incremented:
+                        self._increment_tag_frequency(conn, tag_lower)
+                        incremented.add(tag_lower)
+                continue
+
+            # Normalize for embedding comparison
+            tag_normalized = _normalize_tag_for_embedding(tag_lower)
+            tag_embedding = model.encode_single(tag_normalized)
+
+            # Find best matching canonical tag (with guards)
+            best_match = None
+            best_similarity = 0.0
+
+            if canonical_tags:
+                canonical_tag_list = list(canonical_tags.keys())
+                similarities = model.batch_similarity(tag_normalized, canonical_tag_list)
+
+                for i, sim in enumerate(similarities):
+                    canonical_tag = canonical_tag_list[i]
+                    if _can_merge_tags(tag_normalized, _normalize_tag_for_embedding(canonical_tag), sim):
+                        if sim > best_similarity:
+                            best_similarity = sim
+                            best_match = canonical_tag
+
+            if best_match:
+                # Found a mergeable match
+                if best_match not in normalized:
+                    normalized.append(best_match)
+                    # Increment frequency for merged canonical tag
+                    if best_match not in incremented:
+                        self._increment_tag_frequency(conn, best_match)
+                        incremented.add(best_match)
+            else:
+                # No match found -> add as new canonical tag (frequency=1 by default)
+                self._add_canonical_tag(conn, tag_lower, tag_embedding)
+                # Update in-memory cache for subsequent tags in this batch
+                canonical_tags[tag_lower] = tag_embedding
+                if tag_lower not in normalized:
+                    normalized.append(tag_lower)
+
+        return normalized
+
+    def _get_canonical_categories_embeddings(self, model: EmbeddingModel) -> Dict[str, List[float]]:
+        """
+        Get pre-computed embeddings for all canonical categories.
+        
+        Computes once and caches for subsequent calls.
+        
+        Args:
+            model: Embedding model
+            
+        Returns:
+            Dict mapping canonical category to embedding
+        """
+        if VectorMemoryStore._canonical_categories_embeddings is None:
+            categories = Config.MEMORY_CATEGORIES
+            embeddings = {}
+            
+            # Create human-readable forms for better embedding
+            category_labels = {
+                'code-solution': 'code solution implementation',
+                'bug-fix': 'bug fix error correction',
+                'architecture': 'architecture design structure',
+                'learning': 'learning knowledge discovery',
+                'tool-usage': 'tool usage utility',
+                'debugging': 'debugging troubleshooting diagnosis',
+                'performance': 'performance optimization speed',
+                'security': 'security vulnerability protection',
+                'other': 'other miscellaneous general'
+            }
+            
+            for cat in categories:
+                label = category_labels.get(cat, cat.replace('-', ' '))
+                embeddings[cat] = model.encode_single(label)
+            
+            VectorMemoryStore._canonical_categories_embeddings = embeddings
+        
+        return VectorMemoryStore._canonical_categories_embeddings
+
+    def _normalize_category_semantic(
+        self, category: str, model: EmbeddingModel
+    ) -> str:
+        """
+        Normalize category using semantic similarity to canonical categories.
+        
+        Strategy:
+        - Dictionary fallback for short tokens (< 5 chars)
+        - Pick best matching category if similarity >= threshold
+        - AND best is significantly better than "other" (margin check)
+        
+        Args:
+            category: Input category string
+            model: Embedding model
+            
+        Returns:
+            Canonical category string
+        """
+        if not isinstance(category, str):
+            return 'other'
+        
+        category_lower = category.lower().strip()
+        
+        if not category_lower:
+            return 'other'
+        
+        # Exact match
+        if category_lower in Config.MEMORY_CATEGORIES:
+            return category_lower
+        
+        # Dictionary fallback for short tokens (embeddings unreliable for < 5 chars)
+        SHORT_CATEGORY_ALIASES = {
+            'bug': 'bug-fix',
+            'fix': 'bug-fix',
+            'auth': 'security',
+            'sec': 'security',
+            'perf': 'performance',
+            'opt': 'performance',
+            'debug': 'debugging',
+            'arch': 'architecture',
+            'design': 'architecture',
+            'impl': 'code-solution',
+            'sol': 'code-solution',
+            'learn': 'learning',
+            'tool': 'tool-usage',
+        }
+        
+        if len(category_lower) < 5 and category_lower in SHORT_CATEGORY_ALIASES:
+            return SHORT_CATEGORY_ALIASES[category_lower]
+        
+        # Get canonical category embeddings
+        canonical_embeddings = self._get_canonical_categories_embeddings(model)
+        
+        # Compute similarity with all canonical categories
+        category_embedding = model.encode_single(category_lower)
+        
+        similarities = {}
+        for canonical_cat, canonical_emb in canonical_embeddings.items():
+            similarities[canonical_cat] = float(np.dot(category_embedding, canonical_emb))
+        
+        # Find best match (excluding "other")
+        best_match = None
+        best_similarity = 0.0
+        
+        for cat, sim in similarities.items():
+            if cat != 'other' and sim > best_similarity:
+                best_similarity = sim
+                best_match = cat
+        
+        other_similarity = similarities.get('other', 0.0)
+        
+        # Accept if above threshold AND significantly better than "other"
+        if (best_match and 
+            best_similarity >= Config.CATEGORY_SIMILARITY_THRESHOLD and
+            best_similarity >= other_similarity + Config.CATEGORY_MIN_MARGIN):
+            return best_match
+        
+        return 'other'
     
     def store_memory(
         self,
@@ -204,12 +650,14 @@ class VectorMemoryStore:
         """
         # Input validation
         content = sanitize_input(content)
-        category = validate_category(category)
         tags = validate_tags(tags)
 
         self._ensure_db_initialized_sync()
         # Use provided model or fall back to sync loading
         model = embedding_model or self._get_embedding_model_sync()
+        
+        # Semantic category normalization
+        category = self._normalize_category_semantic(category, model)
 
         # Check for duplicates
         content_hash = generate_content_hash(content)
@@ -241,6 +689,9 @@ class VectorMemoryStore:
                     "message": f"Memory limit reached ({count}/{self.memory_limit}). Use clear_old_memories to free space.",
                     "memory_id": None
                 }
+
+            # Semantic tag normalization (after validation, before storage)
+            tags = self._normalize_tags_semantic(tags, model, conn)
             
             # Generate embedding
             embedding = model.encode_single(content)
@@ -702,12 +1153,88 @@ class VectorMemoryStore:
                     if isinstance(tags_list, list):
                         unique_tags.update(tags_list)
                 except json.JSONDecodeError:
-                    continue  # Skip invalid JSON
+                    continue
 
             # Return sorted list
             return sorted(list(unique_tags))
 
         except Exception as e:
             raise RuntimeError(f"Failed to get unique tags: {e}")
+        finally:
+            conn.close()
+
+    def get_canonical_tags(self) -> List[str]:
+        """
+        Get all canonical tags from the database.
+
+        Returns:
+            List of canonical tag strings sorted alphabetically
+        """
+        self._ensure_db_initialized_sync()
+
+        try:
+            conn = self._get_connection()
+        except Exception as e:
+            raise RuntimeError(f"Failed to get canonical tags: {e}")
+
+        try:
+            results = conn.execute(
+                "SELECT tag FROM canonical_tags ORDER BY tag"
+            ).fetchall()
+            return [row[0] for row in results]
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to get canonical tags: {e}")
+        finally:
+            conn.close()
+
+    def get_tag_frequencies(self) -> Dict[str, int]:
+        """
+        Get frequency count for all canonical tags.
+
+        Returns:
+            Dict mapping tag to frequency count
+        """
+        self._ensure_db_initialized_sync()
+
+        try:
+            conn = self._get_connection()
+        except Exception as e:
+            raise RuntimeError(f"Failed to get tag frequencies: {e}")
+
+        try:
+            results = conn.execute(
+                "SELECT tag, frequency FROM canonical_tags ORDER BY frequency DESC"
+            ).fetchall()
+            return {row[0]: row[1] for row in results}
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to get tag frequencies: {e}")
+        finally:
+            conn.close()
+
+    def get_tag_weights(self) -> Dict[str, float]:
+        """
+        Get IDF-based weights for all canonical tags.
+        
+        Weight formula: 1 / log(1 + frequency)
+        - High frequency tags (common) → lower weight (less discriminative)
+        - Low frequency tags (rare) → higher weight (more discriminative)
+
+        Returns:
+            Dict mapping tag to IDF weight
+        """
+        self._ensure_db_initialized_sync()
+
+        try:
+            conn = self._get_connection()
+        except Exception as e:
+            raise RuntimeError(f"Failed to get tag weights: {e}")
+
+        try:
+            return self._get_tag_weights(conn)
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to get tag weights: {e}")
         finally:
             conn.close()

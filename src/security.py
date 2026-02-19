@@ -99,12 +99,18 @@ def sanitize_input(text: str, max_length: int = None) -> str:
 def validate_tags(tags: List[str]) -> List[str]:
     """
     Validate and sanitize tags.
+
+    Tags are pre-validated here for basic safety.
+    Final normalization happens in semantic tag normalization.
+    
+    Allows structured tags with colon (e.g., type:refactor, priority:high).
+    Only whitelisted prefixes allowed for colon tags.
     
     Args:
         tags: List of tag strings
         
     Returns:
-        List[str]: Validated and sanitized tags
+        List[str]: Pre-validated tags (lowercase, safe chars only)
         
     Raises:
         SecurityError: If validation fails
@@ -113,19 +119,30 @@ def validate_tags(tags: List[str]) -> List[str]:
         raise SecurityError("Tags must be a list")
     
     validated_tags = []
-    for tag in tags[:Config.MAX_TAGS_PER_MEMORY]:  # Limit number of tags
+    for tag in tags[:Config.MAX_TAGS_PER_MEMORY]:
         if isinstance(tag, str):
             try:
                 clean_tag = sanitize_input(tag, Config.MAX_TAG_LENGTH).lower()
-                # Additional tag validation
-                if re.match(r'^[a-z0-9\-_]+$', clean_tag):
+                # Allow alphanumeric, spaces, hyphens, underscores, dots, colons
+                # Colon enables structured tags (type:refactor, priority:high)
+                if re.match(r'^[a-z0-9\-_ .:]+$', clean_tag):
+                    # Normalize whitespace: collapse multiple spaces, trim
+                    clean_tag = ' '.join(clean_tag.split())
+                    
+                    # Colon tag validation: only whitelisted prefixes
+                    if ':' in clean_tag:
+                        parts = clean_tag.split(':', 1)
+                        if len(parts) == 2:
+                            prefix = parts[0].strip()
+                            if prefix not in Config.ALLOWED_COLON_PREFIXES:
+                                # Invalid prefix → skip tag
+                                continue
+                            # Reconstruct with normalized parts
+                            clean_tag = f"{prefix}:{parts[1].strip()}"
+                    
                     if clean_tag and clean_tag not in validated_tags:
                         validated_tags.append(clean_tag)
-                else:
-                    # Skip invalid tags rather than failing
-                    continue
             except SecurityError:
-                # Skip invalid tags rather than failing
                 continue
     
     return validated_tags

@@ -388,6 +388,97 @@ def create_server() -> FastMCP:
                 "message": str(e)
             }
 
+    @mcp.tool()
+    async def get_canonical_tags() -> dict[str, Any]:
+        """
+        Get all canonical tags (semantic tag clusters).
+        
+        Canonical tags are the normalized form of semantically similar tags.
+        For example: 'API v2.0', 'API 2.0', 'api version 2' all map to one canonical tag.
+        """
+        try:
+            # Ensure database is initialized (lazy loading)
+            await memory_store._ensure_db_initialized_async()
+
+            tags = memory_store.get_canonical_tags()
+
+            return {
+                "success": True,
+                "tags": tags,
+                "count": len(tags),
+                "message": f"Retrieved {len(tags)} canonical tags"
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "Failed to retrieve canonical tags",
+                "message": str(e)
+            }
+
+    @mcp.tool()
+    async def get_tag_frequencies() -> dict[str, Any]:
+        """
+        Get frequency count for all canonical tags.
+        
+        Shows how often each tag is used. Useful for understanding tag popularity
+        and for IDF-based weighting.
+        """
+        try:
+            await memory_store._ensure_db_initialized_async()
+
+            frequencies = memory_store.get_tag_frequencies()
+
+            # Sort by frequency descending
+            sorted_freq = sorted(frequencies.items(), key=lambda x: -x[1])
+
+            return {
+                "success": True,
+                "frequencies": dict(sorted_freq),
+                "count": len(frequencies),
+                "message": f"Retrieved frequencies for {len(frequencies)} tags"
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "Failed to retrieve tag frequencies",
+                "message": str(e)
+            }
+
+    @mcp.tool()
+    async def get_tag_weights() -> dict[str, Any]:
+        """
+        Get IDF-based weights for all canonical tags.
+        
+        Weight formula: 1 / log(1 + frequency)
+        - High frequency tags (common like 'api') → lower weight
+        - Low frequency tags (rare like 'module:terminal') → higher weight
+        
+        Useful for search relevance tuning.
+        """
+        try:
+            await memory_store._ensure_db_initialized_async()
+
+            weights = memory_store.get_tag_weights()
+
+            # Sort by weight descending (rarest first)
+            sorted_weights = sorted(weights.items(), key=lambda x: -x[1])
+
+            return {
+                "success": True,
+                "weights": dict(sorted_weights),
+                "count": len(weights),
+                "message": f"Retrieved IDF weights for {len(weights)} tags"
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "Failed to retrieve tag weights",
+                "message": str(e)
+            }
+
 
     return mcp
 

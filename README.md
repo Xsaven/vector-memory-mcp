@@ -5,14 +5,14 @@ A **secure, vector-based memory server** for Claude Desktop using `sqlite-vec` a
 ## ✨ Features
 
 - **🔍 Semantic Search**: Vector-based similarity search using 384-dimensional embeddings
+- **🏷️ Semantic Normalization**: Auto-merge similar tags, normalize categories, structured colon tags
+- **📊 IDF Tag Weights**: Frequency-based weighting for improved search relevance
 - **💾 Persistent Storage**: SQLite database with vector indexing via `sqlite-vec`
-- **🏷️ Smart Organization**: Categories and tags for better memory organization
 - **🔒 Security First**: Input validation, path sanitization, and resource limits
 - **⚡ High Performance**: Fast embedding generation with `sentence-transformers`
 - **🧹 Auto-Cleanup**: Intelligent memory management and cleanup tools
-- **📊 Rich Statistics**: Comprehensive memory database analytics
+- **📈 Rich Statistics**: Comprehensive memory database analytics
 - **🔄 Automatic Deduplication**: SHA-256 content hashing prevents storing duplicate memories
-- **📈 Access Tracking**: Monitors memory usage with access counts and timestamps for optimization
 - **🧠 Smart Cleanup Algorithm**: Prioritizes memory retention based on recency, access patterns, and importance
 
 ## 🛠️ Technical Stack
@@ -21,6 +21,7 @@ A **secure, vector-based memory server** for Claude Desktop using `sqlite-vec` a
 |-----------|------------|---------|
 | **Vector DB** | sqlite-vec | Vector storage and similarity search |
 | **Embeddings** | sentence-transformers/all-MiniLM-L6-v2 | 384D text embeddings |
+| **Normalization** | Semantic similarity + guards | Tag/category auto-merge |
 | **MCP Framework** | FastMCP | High-level tools-only server |
 | **Dependencies** | uv script headers | Self-contained deployment |
 | **Security** | Custom validation | Path/input sanitization |
@@ -255,6 +256,44 @@ Delete memory with ID 123
 
 Removes the memory from both metadata and vector tables atomically.
 
+#### 8. `get_unique_tags` - List All Tags
+Get all unique tags currently used in memories:
+
+```
+Show all unique tags
+```
+
+Returns sorted list of tags from memory metadata.
+
+#### 9. `get_canonical_tags` - List Canonical Tags
+Get all canonical (normalized) tags:
+
+```
+Show canonical tags
+```
+
+Returns the normalized tag forms after semantic merging. Useful for understanding tag consolidation.
+
+#### 10. `get_tag_frequencies` - Tag Usage Statistics
+Get frequency count for all canonical tags:
+
+```
+Show tag frequencies
+```
+
+Shows how often each tag is used. Higher frequency = more common tag.
+
+#### 11. `get_tag_weights` - IDF Weights
+Get IDF-based weights for search relevance:
+
+```
+Show tag weights
+```
+
+Returns weights calculated as `1 / log(1 + frequency)`:
+- Common tags (api, auth) → lower weight (less discriminative)
+- Rare tags (module:terminal) → higher weight (more discriminative)
+
 ### Memory Categories
 
 | Category | Use Cases |
@@ -268,6 +307,104 @@ Removes the memory from both metadata and vector tables atomically.
 | `performance` | Optimization strategies and results |
 | `security` | Security considerations and fixes |
 | `other` | Everything else |
+
+## 🏷️ Semantic Normalization
+
+The server automatically normalizes tags and categories using semantic similarity to maintain consistency.
+
+### Tag Normalization
+
+When storing memories, similar tags are merged into **canonical tags**:
+
+| Input Tags | Canonical Result |
+|------------|------------------|
+| `api v2.0`, `api 2`, `API version 2` | `api v2.0` |
+| `php8`, `PHP 8`, `php-8` | `php8` |
+| `laravel`, `laravel framework` | `laravel` (with substring boost) |
+
+### Merge Rules
+
+**✅ Merges when:**
+- Same version: `api v2.0` ↔ `api 2` (threshold 0.85)
+- High similarity: `php8` ↔ `php 8` (threshold 0.90)
+- Substring boost: `laravel` ⊂ `laravel framework` (+0.03 similarity)
+
+**❌ Never merges:**
+- Different versions: `api v1` ≠ `api v2`
+- Different numbers: `php7` ≠ `php8`
+- Structured vs plain: `type:refactor` ≠ `refactor`
+- Same prefix, different suffix: `type:refactor` ≠ `type:bug`
+- Stop-words: `api` ≠ `rest api`, `ui` ≠ `web ui`
+
+### Structured Tags (Colon Tags)
+
+Use structured tags for fine-grained organization:
+
+```
+["type:refactor", "priority:high", "domain:api", "module:auth"]
+```
+
+**Allowed prefixes:** `type`, `domain`, `strict`, `cognitive`, `batch`, `module`, `vendor`, `priority`, `scope`, `layer`
+
+Invalid prefixes are rejected: `random:stuff` → removed
+
+### Category Normalization
+
+Categories are also normalized semantically. Short inputs use dictionary fallback:
+
+| Input | Output |
+|-------|--------|
+| `bugfix`, `bug`, `fix` | `bug-fix` |
+| `auth`, `sec` | `security` |
+| `perf`, `opt` | `performance` |
+| `debug` | `debugging` |
+| `arch`, `design` | `architecture` |
+
+### Thresholds
+
+| Threshold | Value | Purpose |
+|-----------|-------|---------|
+| Tag merge | 0.90 | Default similarity for merge |
+| Same version | 0.85 | Lower threshold for same-version tags |
+| Substring boost | +0.03 | Boost for subset tags |
+| Category | 0.50 | Category matching threshold |
+| Min substring length | 4 | Minimum for substring boost |
+
+### Stop-Words (No Substring Boost)
+
+These tags never get substring boost (too generic):
+
+```
+api, ui, db, test, auth, infra, ci, cd, app, lib, sdk, cli, gui, web, sql, orm, log, cfg, env, dev, prod, stg
+```
+
+### Tag Hygiene Guidelines
+
+**Good tags** (describe subject/domain):
+```
+["authentication", "laravel", "middleware", "api v2"]
+```
+
+**Bad tags** (describe tools/activities):
+```
+["phpstan", "ci", "tests", "run-migration"]  # Don't use these
+```
+
+### IDF Tag Weights
+
+Tags are weighted using IDF (Inverse Document Frequency):
+
+```
+weight = 1 / log(1 + frequency)
+```
+
+| Tag | Frequency | Weight | Interpretation |
+|-----|-----------|--------|----------------|
+| `api` | 50 | 0.26 | Very common, low discriminative power |
+| `laravel` | 10 | 0.43 | Common, moderate discriminative power |
+| `module:terminal` | 2 | 1.44 | Rare, high discriminative power |
+
+Use `get_tag_weights` to see all weights. Rare tags boost search relevance more than common tags.
 
 ## 🔧 Configuration
 
