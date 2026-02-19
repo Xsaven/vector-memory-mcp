@@ -120,49 +120,11 @@ Priority levels: critical > high > medium > low.
 
 </guidelines>
 
-<provides>Defines brain docs command protocol for real-time .docs/ indexing with YAML front matter parsing.
-Compact workflow integration patterns for documentation discovery and validation.</provides>
+<provides>brain docs CLI protocol — self-documenting tool for .docs/ indexing and search. Iron rules for documentation quality.</provides>
 <guidelines>
 
-# Brain docs command
-Real-time documentation indexing and search via YAML front matter parsing.
-- brain docs - List all documentation files
-- brain docs "keyword1,keyword2" - Search by keywords
-- Returns: file path, name, description, part, type, date, version
-- Keywords: comma-separated, case-insensitive, search in name/description/content
-- Returns INDEX only (metadata), use Read tool to get file content
-
-# Yaml front matter
-Required structure for brain docs indexing.
-- ---
-name: "Document Title"
-description: "Brief description"
-part: 1
-type: "guide"
-date: "2025-11-12"
-version: "1.0.0"
----
-- name, description: REQUIRED
-- part, type, date, version: optional
-- type: tor (Terms of Service), guide, api, concept, architecture, reference
-- part: split large docs (>500 lines) into numbered parts for readability
-- No YAML: returns path only. Malformed YAML: error + exit.
-
-# Workflow discovery
-GOAL(Discover existing documentation before creating new)
-- `1`: Bash(brain docs "{keywords}") → [STORE-AS($DOCS_INDEX)] → END-Bash
-- `2`: IF(STORE-GET($DOCS_INDEX) not empty) →
-  Read('{paths_from_index}')
-  Update existing docs
-→ END-IF
-
-# Workflow multi source
-GOAL(Combine brain docs + vector memory for complete knowledge)
-- `1`: Bash(brain docs "{keywords}") → [STORE-AS($STRUCTURED)] → END-Bash
-- `2`: mcp__vector-memory__search_memories('{query: "{keywords}", limit: 5}')
-- `3`: STORE-AS($MEMORY = Vector search results)
-- `4`: Merge: structured docs (primary) + vector memory (secondary)
-- `5`: Fallback: if no structured docs, use vector memory + Explore agent
+# Brain docs tool
+brain docs — PRIMARY tool for .docs/ project documentation discovery and search. Self-documenting: brain docs --help for usage, -v for examples, -vv for best practices. Key capabilities: --download=<url> persists external docs locally (lossless, zero tokens vs vector memory summaries), --undocumented finds code without docs. Always use brain docs BEFORE creating documentation, web research, or making assumptions about project.
 
 </guidelines>
 
@@ -235,17 +197,16 @@ Maintain awareness of current time and content recency.
 - Prefer recent information over outdated sources
 - Flag deprecated frameworks or libraries
 
+# Rule interpretation
+Interpret rules by SPIRIT, not LETTER. Rules define intent, not exhaustive enumeration.
+When a rule seems to conflict with practical reality → apply the rule's WHY, not its literal TEXT.
+Edge cases not covered by rules → apply closest rule's intent + conservative default.
+
 </guidelines>
 
 <provides>Documentation-first execution policy: .docs folder is the canonical source of truth.
 All agent actions (coding, research, decisions) must align with project documentation.</provides>
 <guidelines>
-
-# Docs discovery workflow
-Standard workflow for documentation discovery.
-- `step-1`: Bash('brain docs {keywords}') STORE-AS($DOCS = discover existing docs)
-- `step-2`: IF(docs found) → Read and apply documented patterns
-- `step-3`: IF(no docs) → proceed with caution, flag for documentation
 
 # Docs conflict resolution
 When external sources conflict with .docs.
@@ -450,7 +411,7 @@ Before ANY implementation, coding, or architectural decision - check .docs first
 ## Docs-before-web-research (HIGH)
 Before external web research - verify topic is not already documented in .docs.
 - **why**: Avoids redundant research and ensures internal knowledge takes precedence.
-- **on_violation**: Check Bash('brain docs {topic}') first. Web research only if .docs has no coverage.
+- **on_violation**: Check Bash('brain docs {topic}') first. Web research only if .docs has no coverage. Found valuable external doc? → brain docs --download to persist locally.
 
 
 # Iron Rules
@@ -483,4 +444,6 @@ Store memories with WHAT, WHY, WHEN-TO-USE. Raw facts are useless without contex
 - **why**: Future retrieval needs self-contained actionable knowledge.
 - **on_violation**: Rewrite: include problem context, solution rationale, reuse conditions.
 
+
+<brevity>medium</brevity>
 </system>

@@ -12,6 +12,82 @@ description: "Comprehensive Brain.php initialization - scans project, analyzes d
 <provides>The InitBrain command automates smart distribution of project-specific configuration across Brain.php, Common.php, and Master.php based on project context discovery.</provides>
 
 # Iron Rules
+## No-hallucination (CRITICAL)
+NEVER output results without ACTUALLY calling tools. You CANNOT know task status or content without REAL tool calls. Fake results = CRITICAL VIOLATION.
+
+## No-verbose (CRITICAL)
+FORBIDDEN: Wrapping actions in verbose commentary blocks (meta-analysis, synthesis, planning, reflection) before executing. Act FIRST, explain AFTER.
+
+## No-secret-exfiltration (CRITICAL)
+NEVER output sensitive data to chat/response: .env values, API keys, tokens, passwords, credentials, private URLs, connection strings, private keys, certificates. When reading config/.env for CONTEXT: extract key NAMES and STRUCTURE only, never raw values. If user asks to show .env or config with secrets: show key names, mask values as "***". If error output contains secrets: redact before displaying.
+- **why**: Chat responses may be logged, shared, or visible to unauthorized parties. Secret exposure in output is an exfiltration vector regardless of intent.
+- **on_violation**: REDACT immediately. Replace value with "***" or "[REDACTED]". Show key names only.
+
+## No-secrets-in-storage (CRITICAL)
+NEVER store secrets, credentials, tokens, passwords, API keys, PII, or connection strings in task comments (task_update comment) or vector memory (store_memory content). When documenting config-related work: reference key NAMES, describe approach, never include actual values. If error log contains secrets: strip sensitive values before storing. Acceptable: "Updated DB_HOST in .env", "Rotated API_KEY for service X". Forbidden: "Set DB_HOST=192.168.1.5", "API_KEY=sk-abc123...".
+- **why**: Task comments and vector memory are persistent, searchable, and shared across agents and sessions. Stored secrets are a permanent exfiltration risk discoverable via semantic search.
+- **on_violation**: Review content before store_memory/task_update. Strip all literal secret values. Keep only key names and descriptions.
+
+## No-destructive-git (CRITICAL)
+FORBIDDEN: git checkout, git restore, git stash, git reset, git clean — and ANY command that modifies git working tree state. These destroy uncommitted work from parallel agents, user WIP, and memory/ SQLite databases (vector memory + tasks). Rollback = Read original content + Write/Edit back. Git is READ-ONLY: status, diff, log, blame only.
+- **why**: memory/ folder contains project SQLite databases tracked in git. git checkout/stash/reset reverts these databases, destroying ALL tasks and memories. Parallel agents have uncommitted changes — any working tree modification wipes their work. Unrecoverable data loss.
+- **on_violation**: ABORT git command. Use Read to get original content, Write/Edit to restore specific files. Never touch git working tree state.
+
+## No-destructive-git-in-agents (CRITICAL)
+When delegating to agents: ALWAYS include in prompt: "FORBIDDEN: git checkout, git restore, git stash, git reset, git clean. Rollback = Read + Write. Git is READ-ONLY."
+- **why**: Sub-agents do not inherit parent rules. Without explicit prohibition, agents will use git for rollback and destroy parallel work.
+- **on_violation**: Add git prohibition to agent prompt before delegation.
+
+## Memory-folder-sacred (CRITICAL)
+memory/ folder contains SQLite databases (vector memory + tasks). SACRED — protect at ALL times. NEVER git checkout/restore/reset/clean memory/ — these DESTROY all project knowledge irreversibly. In PARALLEL CONTEXT: use "git add {specific_files}" (task-scope only) — memory/ excluded implicitly because it is not in task files. In NON-PARALLEL context: "git add -A" is safe and DESIRED — includes memory/ for full state checkpoint preserving knowledge base alongside code.
+- **why**: memory/ is the project persistent brain. Destructive git commands on memory/ = total knowledge loss. In parallel mode, concurrent SQLite writes + git add -A = binary merge conflicts and staged half-done sibling work. In sequential mode, committing memory/ preserves full project state for safe revert.
+- **on_violation**: NEVER destructive git on memory/. Parallel: git add specific files only (memory/ not in scope). Non-parallel: git add -A (full checkpoint with memory/).
+
+## Task-tags-predefined-only (CRITICAL)
+Task tags MUST use ONLY predefined values. FORBIDDEN: inventing new tags, synonyms, variations. Allowed: decomposed, validation-fix, blocked, stuck, needs-research, light-validation, parallel-safe, atomic, manual-only, regression, feature, bugfix, refactor, research, docs, test, chore, spike, hotfix, backend, frontend, database, api, auth, ui, config, infra, ci-cd, migration, strict:relaxed, strict:standard, strict:strict, strict:paranoid, cognitive:minimal, cognitive:standard, cognitive:deep, cognitive:exhaustive, batch:trivial.
+- **why**: Ad-hoc tags cause explosion ("user-auth", "authentication", "auth" = same thing, search finds none). Predefined list = consistent search.
+- **on_violation**: Replace with closest predefined match. No match = skip tag, put context in content.
+
+## Memory-tags-predefined-only (CRITICAL)
+Memory tags MUST use ONLY predefined values. Allowed: pattern, solution, `failure`, decision, insight, workaround, deprecated, project-wide, module-specific, temporary, reusable.
+- **why**: Unknown tags = unsearchable memories. Predefined = discoverable.
+- **on_violation**: Replace with closest predefined match.
+
+## Memory-categories-predefined-only (CRITICAL)
+Memory category MUST be one of: code-solution, bug-fix, architecture, learning, debugging, performance, security, project-context. FORBIDDEN: "other", "general", "misc", or unlisted.
+- **why**: "other" is garbage nobody searches. Every memory needs meaningful category.
+- **on_violation**: Choose most relevant from predefined list.
+
+## Mandatory-level-tags (CRITICAL)
+EVERY task MUST have exactly ONE strict:* tag AND ONE cognitive:* tag. Allowed strict: strict:relaxed, strict:standard, strict:strict, strict:paranoid. Allowed cognitive: cognitive:minimal, cognitive:standard, cognitive:deep, cognitive:exhaustive. Missing level tags = assign based on task scope analysis.
+- **why**: Level tags enable per-task compilation and cognitive load calibration. Without them, system defaults apply blindly regardless of task complexity.
+- **on_violation**: Analyze task scope and assign: strict:{level} + cognitive:{level}. Simple rename = strict:relaxed + cognitive:minimal. Production auth = strict:strict + cognitive:deep.
+
+## Safety-escalation-non-overridable (CRITICAL)
+After loading task, check file paths in task.content/comment. If files match safety patterns → effective level MUST be >= pattern minimum, regardless of task tags or .env default. Agent tags are suggestions UPWARD only — can raise above safety floor, never lower below it.
+- **why**: Safety patterns guarantee minimum protection for critical code areas. Agent cannot "cheat" by under-tagging a task touching auth/ or payments/.
+- **on_violation**: Raise effective level to safety floor. Log escalation in task comment.
+
+## Failure-policy-tool-error (CRITICAL)
+TOOL ERROR / MCP FAILURE: 1) Retry ONCE with same parameters. 2) Still fails → STOP current step. 3) Store `failure` to memory (category: "debugging", tags: ["failure"]). 4) Update task comment: "BLOCKED: {tool} failed after retry. Error: {msg}", append_comment: true. 5) -y mode: set status "pending" (return to queue for retry), abort current workflow. Interactive: ask user "Tool failed. Retry/Skip/Abort?". NEVER set "stopped" on `failure` — "stopped" = permanently cancelled.
+- **why**: Consistent tool `failure` handling across all commands. One retry catches transient issues. Failed task returns to `pending` queue — it is NOT cancelled, just needs another attempt or manual intervention.
+- **on_violation**: Follow 5-step sequence. Max 1 retry for same tool call. Always store `failure` to memory. Status → `pending`, NEVER `stopped`.
+
+## Failure-policy-missing-docs (HIGH)
+MISSING DOCS: 1) Apply aggressive-docs-search (3+ keyword variations). 2) All variations exhausted → conclude "no docs". 3) Proceed using: task.content (primary spec) + vector memory context + parent task context. 4) Log in task comment: "No documentation found after {N} search attempts. Proceeding with task.content.", append_comment: true. NOT a blocker — absence of docs is information, not `failure`.
+- **why**: Missing docs must not block execution. task.content is the minimum viable specification. Blocking on missing docs causes pipeline stalls for tasks that never had docs.
+- **on_violation**: Never block on missing docs. Search aggressively, then proceed with available context.
+
+## Failure-policy-ambiguous-spec (HIGH)
+AMBIGUOUS SPEC: 1) Identify SPECIFIC ambiguity (not "task is unclear" but "field X: type A or B?"). 2) -y mode: choose conservative/safe interpretation, log decision in task comment: "DECISION: interpreted {X} as {Y} because {reason}", append_comment: true. 3) Interactive: ask ONE targeted question about the SPECIFIC gap. 4) After 1 clarification → proceed. NEVER ask open-ended "what did you mean?" or multiple follow-ups.
+- **why**: Ambiguity paralysis wastes more time than conservative interpretation. One precise question is enough — if user wanted detailed spec, they would have written docs.
+- **on_violation**: Identify specific gap. One question or auto-decide. Proceed.
+
+## Auto-approve-default (CRITICAL)
+Default behavior is FULLY AUTOMATED (no user prompts). $HAS_AUTO_APPROVE = true confirms. Without -y: show summary before writing files. With -y: fully silent pipeline.
+- **why**: Automated workflow requires zero interaction by default.
+- **on_violation**: Proceed autonomously. Never block on user input.
+
 ## Temporal-context-first (CRITICAL)
 Temporal context MUST be initialized first: Bash('date +"%Y-%m-%d %H:%M:%S %Z"')
 - **why**: Ensures all research and recommendations reflect current year best practices
@@ -63,9 +139,54 @@ ALL configurable values in generated code MUST use $this->var("KEY", default) WO
 - **on_violation**: Hardcoded values in code OR unused variables in .env
 
 
+# Task tag selection
+GOAL(Select tags per task. Combine dimensions for precision.)
+WORKFLOW (pipeline stage): decomposed, validation-fix, blocked, stuck, needs-research, light-validation, parallel-safe, atomic, manual-only, regression
+TYPE (work kind): feature, bugfix, refactor, research, docs, test, chore, spike, hotfix
+DOMAIN (area): backend, frontend, database, api, auth, ui, config, infra, ci-cd, migration
+STRICT LEVEL: strict:relaxed, strict:standard, strict:strict, strict:paranoid
+COGNITIVE LEVEL: cognitive:minimal, cognitive:standard, cognitive:deep, cognitive:exhaustive
+BATCH: batch:trivial
+Formula: 1 TYPE + 1 DOMAIN + 0-2 WORKFLOW + 1 STRICT + 1 COGNITIVE. Example: ["feature", "api", "strict:standard", "cognitive:standard"] or ["bugfix", "auth", "validation-fix", "strict:strict", "cognitive:deep"].
+
+# Memory tag selection
+GOAL(Select 1-3 tags per memory. Combine dimensions.)
+CONTENT (kind): pattern, solution, `failure`, decision, insight, workaround, deprecated
+SCOPE (breadth): project-wide, module-specific, temporary, reusable
+Formula: 1 CONTENT + 0-1 SCOPE. Example: ["solution", "reusable"] or ["failure", "module-specific"]. Max 3 tags.
+
+# Safety escalation patterns
+GOAL(Automatic level escalation based on file patterns and context)
+File patterns → strict minimum: auth/, guards/, policies/, permissions/ → strict. payments/, billing/, stripe/, subscription/ → strict. .env, credentials, secrets, config/auth → paranoid. migrations/, schema → strict. composer.json, package.json, *.lock → standard. CI/, .github/, Dockerfile, docker-compose → strict. routes/, middleware/ → standard.
+Context patterns → level minimum: priority=critical → strict+deep. tag hotfix or production → strict+standard. touches >10 files → standard+standard. tag breaking-change → strict+deep. Keywords security/encryption/auth/permission → strict. Keywords migration/schema/database/drop → strict.
+
+# Cognitive level
+GOAL(Cognitive level: standard — calibrate analysis depth accordingly)
+Memory probes per phase: 2-3 targeted
+Failure history: recent only
+Research (context7/web): on error/ambiguity
+Agent scaling: auto (2-3)
+Comment parsing: basic parse
+
+# Aggressive docs search
+GOAL(Find documentation even if named differently than task/code)
+- `1`: Generate keyword variations from task title/content:
+- `2`:   1. Original: "FocusModeTest" → search "FocusModeTest"
+- `3`:   2. Split CamelCase: "FocusModeTest" → search "FocusMode", "Focus Mode"
+- `4`:   3. Remove suffix: "FocusModeTest" → search "Focus" (remove Mode, Test)
+- `5`:   4. Domain words: extract meaningful nouns → search each
+- `6`:   5. Parent context: if task has parent → include parent title keywords
+- `7`: Common suffixes to STRIP: Test, Tests, Controller, Service, Repository, Command, Handler, Provider, Factory, Manager, Helper, Validator, Processor
+- `8`: Search ORDER: most specific → most general. STOP when found.
+- `9`: Minimum 3 search attempts before concluding "no documentation".
+- `10`: WRONG: brain docs "UserAuthenticationServiceTest" → not found → done
+- `11`: RIGHT: brain docs "UserAuthenticationServiceTest" → not found → brain docs "UserAuthentication" → not found → brain docs "Authentication" → FOUND!
+
 # Input
 STORE-AS($RAW_INPUT = $ARGUMENTS)
-STORE-AS($INIT_PARAMS = {initialization parameters extracted from $RAW_INPUT})
+STORE-AS($HAS_AUTO_APPROVE = {true if $RAW_INPUT contains "-y" or "--yes"})
+STORE-AS($CLEAN_ARGS = {$RAW_INPUT with -y/--yes flags removed})
+STORE-AS($INIT_PARAMS = {initialization parameters extracted from $CLEAN_ARGS})
 
 # Phase1 temporal context
 GOAL(Initialize temporal awareness for all subsequent operations)
@@ -81,36 +202,36 @@ NOTE(This ensures all research queries include current year for up-to-date resul
 GOAL(Discover project structure, technology stack, and patterns)
 - NOTE(Execute all discovery tasks in parallel for efficiency)
 - `parallel-discovery-tasks`: TASK →
-  Task(@agent-explore, 'TASK →'."\\n"
-    .'  Check if .docs/ directory exists using Glob'."\\n"
-    .'  Use Glob("**/.docs/**/*.md") to find documentation files'."\\n"
-    .'  IF(.docs/ exists) →'."\\n"
-    .'  Read all .md files from .docs/ directory'."\\n"
-    .'  Extract: project goals, requirements, architecture decisions, domain terminology'."\\n"
-    .'  STORE-AS($DOCS_CONTENT)'."\\n"
-    .'→ ELSE →'."\\n"
-    .'  No .docs/ found'."\\n"
-    .'  STORE-AS($DOCS_CONTENT = null)'."\\n"
-    .'→ END-IF'."\\n"
-    .'→ END-TASK', 'CONTEXT(Documentation discovery for project context)')
-  Task(@agent-explore, 'TASK →'."\\n"
-    .'  Analyze project root structure'."\\n"
-    .'  Use Glob to find: composer.json, package.json, .env.example, README.md'."\\n"
-    .'  Read key dependency files'."\\n"
-    .'  Identify project type (Laravel, Node.js, hybrid, etc.)'."\\n"
-    .'  Extract technology stack from dependency files'."\\n"
-    .'  STORE-AS($PROJECT_TYPE)'."\\n"
-    .'  STORE-AS($TECH_STACK = {languages: [...], frameworks: [...], packages: [...], services: [...]})'."\\n"
-    .'→ END-TASK', 'CONTEXT(Codebase structure and tech stack analysis)')
-  Task(@agent-explore, 'TASK →'."\\n"
-    .'  Scan for architectural patterns'."\\n"
-    .'  Use Glob to find PHP/JS/TS files in app/ and src/ directories'."\\n"
-    .'  Analyze code structure and organization'."\\n"
-    .'  Identify: MVC, DDD, CQRS, microservices, monolith, etc.'."\\n"
-    .'  Detect design patterns: repositories, services, factories, observers, etc.'."\\n"
-    .'  Find coding conventions: naming, structure, organization'."\\n"
-    .'  STORE-AS($ARCHITECTURE_PATTERNS = {architecture_style: "...", design_patterns: [...], conventions: [...]})'."\\n"
-    .'→ END-TASK', 'CONTEXT(Architecture pattern discovery)')
+  Task(@agent-explore, TASK →
+  Check if .docs/ directory exists using Glob
+  Use Glob("**/.docs/**/*.md") to find documentation files
+  IF(.docs/ exists) →
+  Read all .md files from .docs/ directory
+  Extract: project goals, requirements, architecture decisions, domain terminology
+  STORE-AS($DOCS_CONTENT)
+→ ELSE →
+  No .docs/ found
+  STORE-AS($DOCS_CONTENT = null)
+→ END-IF
+→ END-TASK, 'CONTEXT(Documentation discovery for project context)')
+  Task(@agent-explore, TASK →
+  Analyze project root structure
+  Use Glob to find: composer.json, package.json, .env.example, README.md
+  Read key dependency files
+  Identify project type (Laravel, Node.js, hybrid, etc.)
+  Extract technology stack from dependency files
+  STORE-AS($PROJECT_TYPE)
+  STORE-AS($TECH_STACK = {languages: [...], frameworks: [...], packages: [...], services: [...]})
+→ END-TASK, 'CONTEXT(Codebase structure and tech stack analysis)')
+  Task(@agent-explore, TASK →
+  Scan for architectural patterns
+  Use Glob to find PHP/JS/TS files in app/ and src/ directories
+  Analyze code structure and organization
+  Identify: MVC, DDD, CQRS, microservices, monolith, etc.
+  Detect design patterns: repositories, services, factories, observers, etc.
+  Find coding conventions: naming, structure, organization
+  STORE-AS($ARCHITECTURE_PATTERNS = {architecture_style: "...", design_patterns: [...], conventions: [...]})
+→ END-TASK, 'CONTEXT(Architecture pattern discovery)')
   TASK →
   Read existing configuration files (known paths - no exploration needed):
   Read('.brain/node/Brain.php')
@@ -133,34 +254,34 @@ GOAL(Discover project structure, technology stack, and patterns)
 GOAL(Discover environment configuration, containerization, and infrastructure patterns)
 - NOTE(Environment rules go to Common.php - shared by Brain AND all Agents)
 - `parallel-environment-tasks`: TASK →
-  Task(@agent-explore, 'TASK →'."\\n"
-    .'  Use Glob to find: Dockerfile*, docker-compose*.yml, .dockerignore'."\\n"
-    .'  Read Docker configurations if found'."\\n"
-    .'  Extract: base images, services, ports, volumes, networks'."\\n"
-    .'  Identify: container orchestration patterns (Docker Compose, K8s, etc.)'."\\n"
-    .'  STORE-AS($DOCKER_CONFIG = {has_docker: bool, services: [...], patterns: [...]})'."\\n"
-    .'→ END-TASK', 'CONTEXT(Docker and containerization discovery)')
-  Task(@agent-explore, 'TASK →'."\\n"
-    .'  Use Glob to find: .github/workflows/*.yml, .gitlab-ci.yml, Jenkinsfile, bitbucket-pipelines.yml'."\\n"
-    .'  Read CI/CD configurations if found'."\\n"
-    .'  Extract: build steps, test runners, deployment targets'."\\n"
-    .'  Identify: CI/CD platform and workflow patterns'."\\n"
-    .'  STORE-AS($CICD_CONFIG = {platform: "...", workflows: [...], deployment_targets: [...]})'."\\n"
-    .'→ END-TASK', 'CONTEXT(CI/CD pipeline discovery)')
-  Task(@agent-explore, 'TASK →'."\\n"
-    .'  Use Glob to find: .editorconfig, .prettierrc*, .eslintrc*, phpcs.xml*, phpstan.neon*'."\\n"
-    .'  Read linter/formatter configurations if found'."\\n"
-    .'  Extract: code style rules, linting rules, analysis levels'."\\n"
-    .'  Identify: tooling ecosystem (Prettier, ESLint, PHPStan, etc.)'."\\n"
-    .'  STORE-AS($DEV_TOOLS_CONFIG = {formatters: [...], linters: [...], analyzers: [...]})'."\\n"
-    .'→ END-TASK', 'CONTEXT(Development tooling discovery)')
-  Task(@agent-explore, 'TASK →'."\\n"
-    .'  Use Glob to find: .env.example, config/*.php, infrastructure/*'."\\n"
-    .'  Analyze service connections: databases, caches, queues, storage'."\\n"
-    .'  Identify: external service dependencies (AWS, GCP, Redis, Elasticsearch)'."\\n"
-    .'  Map infrastructure topology'."\\n"
-    .'  STORE-AS($INFRASTRUCTURE_CONFIG = {services: [...], external_deps: [...], topology: {...}})'."\\n"
-    .'→ END-TASK', 'CONTEXT(Infrastructure and services discovery)')
+  Task(@agent-explore, TASK →
+  Use Glob to find: Dockerfile*, docker-compose*.yml, .dockerignore
+  Read Docker configurations if found
+  Extract: base images, services, ports, volumes, networks
+  Identify: container orchestration patterns (Docker Compose, K8s, etc.)
+  STORE-AS($DOCKER_CONFIG = {has_docker: bool, services: [...], patterns: [...]})
+→ END-TASK, 'CONTEXT(Docker and containerization discovery)')
+  Task(@agent-explore, TASK →
+  Use Glob to find: .github/workflows/*.yml, .gitlab-ci.yml, Jenkinsfile, bitbucket-pipelines.yml
+  Read CI/CD configurations if found
+  Extract: build steps, test runners, deployment targets
+  Identify: CI/CD platform and workflow patterns
+  STORE-AS($CICD_CONFIG = {platform: "...", workflows: [...], deployment_targets: [...]})
+→ END-TASK, 'CONTEXT(CI/CD pipeline discovery)')
+  Task(@agent-explore, TASK →
+  Use Glob to find: .editorconfig, .prettierrc*, .eslintrc*, phpcs.xml*, phpstan.neon*
+  Read linter/formatter configurations if found
+  Extract: code style rules, linting rules, analysis levels
+  Identify: tooling ecosystem (Prettier, ESLint, PHPStan, etc.)
+  STORE-AS($DEV_TOOLS_CONFIG = {formatters: [...], linters: [...], analyzers: [...]})
+→ END-TASK, 'CONTEXT(Development tooling discovery)')
+  Task(@agent-explore, TASK →
+  Use Glob to find: .env.example, config/*.php, infrastructure/*
+  Analyze service connections: databases, caches, queues, storage
+  Identify: external service dependencies (AWS, GCP, Redis, Elasticsearch)
+  Map infrastructure topology
+  STORE-AS($INFRASTRUCTURE_CONFIG = {services: [...], external_deps: [...], topology: {...}})
+→ END-TASK, 'CONTEXT(Infrastructure and services discovery)')
 → END-TASK
 - `2`: VERIFY-SUCCESS(Environment discovery `completed`)
 - `3`: STORE-AS($ENVIRONMENT_CONTEXT = Merged environment configuration)
@@ -168,13 +289,13 @@ GOAL(Discover environment configuration, containerization, and infrastructure pa
 # Phase3 documentation analysis
 GOAL(Deep analysis of project documentation to extract requirements and domain knowledge)
 - `1`: IF(STORE-GET($DOCS_CONTENT) !== null) →
-  Task(@agent-documentation-master, 'INPUT(STORE-GET($DOCS_CONTENT))', 'TASK →'."\\n"
-    .'  Analyze all documentation files'."\\n"
-    .'  Extract: project goals, requirements, constraints, domain concepts'."\\n"
-    .'  Identify: key workflows, business rules, integration points'."\\n"
-    .'  Map documentation to Brain configuration needs'."\\n"
-    .'  Suggest: custom includes, rules, guidelines based on docs'."\\n"
-    .'→ END-TASK', 'OUTPUT({goals: [...], requirements: [...], domain_concepts: [...], suggested_config: {...}})')
+  Task(@agent-documentation-master, 'INPUT(STORE-GET($DOCS_CONTENT))', TASK →
+  Analyze all documentation files
+  Extract: project goals, requirements, constraints, domain concepts
+  Identify: key workflows, business rules, integration points
+  Map documentation to Brain configuration needs
+  Suggest: custom includes, rules, guidelines based on docs
+→ END-TASK, 'OUTPUT({goals: [...], requirements: [...], domain_concepts: [...], suggested_config: {...}})')
   STORE-AS($DOCS_ANALYSIS)
 → ELSE →
   No documentation found - will rely on codebase analysis only
@@ -220,11 +341,11 @@ NOTE(Brain uses vector memory MCP tools directly - NO agent delegation needed Si
 GOAL(Analyze and suggest PROJECT-SPECIFIC includes only (NOT standard includes))
 NOTE(IMPORTANT: Brain already has a Variation with standard includes configured This phase focuses ONLY on .brain/node/Includes/ FORBIDDEN: Suggesting or modifying vendor/jarvis-brain/core/src/Includes/* Brain analyzes ExploreMaster results directly - no additional agent needed)
 
-- `1`: Task(@agent-explore, 'TASK →'."\\n"
-    .'  Scan .brain/node/Includes/ for existing project includes'."\\n"
-    .'  Read each include file to understand its purpose'."\\n"
-    .'  Identify gaps in project-specific configuration'."\\n"
-    .'→ END-TASK', 'CONTEXT(Project-specific includes discovery)')
+- `1`: Task(@agent-explore, TASK →
+  Scan .brain/node/Includes/ for existing project includes
+  Read each include file to understand its purpose
+  Identify gaps in project-specific configuration
+→ END-TASK, 'CONTEXT(Project-specific includes discovery)')
 - `2`: STORE-AS($EXISTING_PROJECT_INCLUDES)
 - `3`: TASK →
   Brain analyzes EXISTING_PROJECT_INCLUDES directly:
@@ -289,39 +410,39 @@ NOTE(Common.php is included by BOTH BrainIncludesTrait AND AgentIncludesTrait Ru
 → END-IF
 → END-TASK
 - `3`: STORE-AS($CURRENT_COMMON_CONFIG)
-- `4`: Task(@agent-prompt-master, 'INPUT(STORE-GET($CURRENT_COMMON_CONFIG) && STORE-GET($DISTRIBUTED_GUIDELINES.COMMON) && STORE-GET($ENVIRONMENT_CONTEXT))', 'TASK →'."\\n"
-    .'  PRESERVE existing class structure, namespace, and extends IncludeArchetype'."\\n"
-    .'  IF(CURRENT_COMMON_CONFIG.is_populated) →'."\\n"
-    .'  MERGE MODE: File has existing content'."\\n"
-    .'    - KEEP all existing rules/guidelines that are still relevant'."\\n"
-    .'    - UPDATE rules if new discovery provides better info (same id, improved text)'."\\n"
-    .'    - ADD only NEW rules/guidelines not already present'."\\n"
-    .'    - REMOVE nothing unless explicitly obsolete'."\\n"
-    .'    - Compare rule IDs to avoid duplicates'."\\n"
-    .'→ ELSE →'."\\n"
-    .'  FRESH MODE: File is empty/skeleton - add all discovered rules'."\\n"
-    .'→ END-IF'."\\n"
-    .'  Focus on environment and universal rules:'."\\n"
-    .'    - Docker/container configuration awareness'."\\n"
-    .'    - Tech stack version constraints'."\\n"
-    .'    - Universal coding conventions'."\\n"
-    .'    - Shared infrastructure knowledge'."\\n"
-    .'  '."\\n"
-    .'  CRITICAL - GENERATE CODE WITH $this->var() IMMEDIATELY:'."\\n"
-    .'    WRONG: ->text("PHP version must be 8.3")'."\\n"
-    .'    RIGHT: ->text(["PHP version must be", $this->var("PHP_VERSION", "8.3")])'."\\n"
-    .'    WRONG: $limit = 100;'."\\n"
-    .'    RIGHT: $limit = $this->var("MAX_LINE_LENGTH", 100);'."\\n"
-    .'  '."\\n"
-    .'    For EACH configurable value in generated code:'."\\n"
-    .'      1. USE $this->var("KEY", default) IN THE CODE IMMEDIATELY'."\\n"
-    .'      2. COLLECT to env_vars: {name: "KEY", default: "value", description: "...", variants: "..."}'."\\n"
-    .'  '."\\n"
-    .'    Candidates: PHP_VERSION, NODE_VERSION, DATABASE_TYPE, DOCKER_ENABLED'."\\n"
-    .'    Candidates: PHPSTAN_LEVEL, TEST_COVERAGE_MIN, MAX_LINE_LENGTH'."\\n"
-    .'  '."\\n"
-    .'  Apply prompt engineering: clarity, brevity, token efficiency'."\\n"
-    .'→ END-TASK', 'OUTPUT({common_php_content: "...", rules_kept: [...], rules_added: [...], rules_updated: [...], env_vars: [{name, default, description, variants}]})')
+- `4`: Task(@agent-prompt-master, 'INPUT(STORE-GET($CURRENT_COMMON_CONFIG) && STORE-GET($DISTRIBUTED_GUIDELINES.COMMON) && STORE-GET($ENVIRONMENT_CONTEXT))', TASK →
+  PRESERVE existing class structure, namespace, and extends IncludeArchetype
+  IF(CURRENT_COMMON_CONFIG.is_populated) →
+  MERGE MODE: File has existing content
+    - KEEP all existing rules/guidelines that are still relevant
+    - UPDATE rules if new discovery provides better info (same id, improved text)
+    - ADD only NEW rules/guidelines not already present
+    - REMOVE nothing unless explicitly obsolete
+    - Compare rule IDs to avoid duplicates
+→ ELSE →
+  FRESH MODE: File is empty/skeleton - add all discovered rules
+→ END-IF
+  Focus on environment and universal rules:
+    - Docker/container configuration awareness
+    - Tech stack version constraints
+    - Universal coding conventions
+    - Shared infrastructure knowledge
+  
+  CRITICAL - GENERATE CODE WITH $this->var() IMMEDIATELY:
+    WRONG: ->text("PHP version must be 8.3")
+    RIGHT: ->text(["PHP version must be", $this->var("PHP_VERSION", "8.3")])
+    WRONG: $limit = 100;
+    RIGHT: $limit = $this->var("MAX_LINE_LENGTH", 100);
+  
+    For EACH configurable value in generated code:
+      1. USE $this->var("KEY", default) IN THE CODE IMMEDIATELY
+      2. COLLECT to env_vars: {name: "KEY", default: "value", description: "...", variants: "..."}
+  
+    Candidates: PHP_VERSION, NODE_VERSION, DATABASE_TYPE, DOCKER_ENABLED
+    Candidates: PHPSTAN_LEVEL, TEST_COVERAGE_MIN, MAX_LINE_LENGTH
+  
+  Apply prompt engineering: clarity, brevity, token efficiency
+→ END-TASK, 'OUTPUT({common_php_content: "...", rules_kept: [...], rules_added: [...], rules_updated: [...], env_vars: [{name, default, description, variants}]})')
 - `5`: Brain receives PromptMaster response with content + env_vars
 - `6`: STORE-AS($ENHANCED_COMMON_PHP)
 - `7`: TASK →
@@ -346,40 +467,40 @@ NOTE(Master.php is included by AgentIncludesTrait only (NOT Brain) Rules here ap
 - `1`: Read existing Master.php
 - `2`: Read('.brain/node/Master.php')
 - `3`: STORE-AS($CURRENT_MASTER_CONFIG)
-- `4`: Task(@agent-prompt-master, 'INPUT(STORE-GET($CURRENT_MASTER_CONFIG) && STORE-GET($DISTRIBUTED_GUIDELINES.MASTER) && STORE-GET($ARCHITECTURE_PATTERNS))', 'TASK →'."\\n"
-    .'  PRESERVE existing class structure, namespace, and extends IncludeArchetype'."\\n"
-    .'  IF(CURRENT_MASTER_CONFIG.is_populated) →'."\\n"
-    .'  MERGE MODE: File has existing content'."\\n"
-    .'    - KEEP all existing rules/guidelines that are still relevant'."\\n"
-    .'    - UPDATE rules if new discovery provides better info (same id, improved text)'."\\n"
-    .'    - ADD only NEW rules/guidelines not already present'."\\n"
-    .'    - REMOVE nothing unless explicitly obsolete'."\\n"
-    .'    - Compare rule IDs to avoid duplicates'."\\n"
-    .'→ ELSE →'."\\n"
-    .'  FRESH MODE: File is empty/skeleton - add all discovered rules'."\\n"
-    .'→ END-IF'."\\n"
-    .'  Focus on agent execution patterns:'."\\n"
-    .'    - How agents should approach project tasks'."\\n"
-    .'    - Tool usage patterns for this project'."\\n"
-    .'    - Code generation conventions'."\\n"
-    .'    - Test writing patterns'."\\n"
-    .'    - Quality gates before task completion'."\\n"
-    .'  '."\\n"
-    .'  CRITICAL - GENERATE CODE WITH $this->var() IMMEDIATELY:'."\\n"
-    .'    WRONG: ->text("Max task estimate is 8 hours")'."\\n"
-    .'    RIGHT: ->text(["Max task estimate is", $this->var("MAX_TASK_ESTIMATE_HOURS", 8), "hours"])'."\\n"
-    .'    WRONG: $model = "sonnet";'."\\n"
-    .'    RIGHT: $model = $this->var("DEFAULT_AGENT_MODEL", "sonnet");'."\\n"
-    .'  '."\\n"
-    .'    For EACH configurable value in generated code:'."\\n"
-    .'      1. USE $this->var("KEY", default) IN THE CODE IMMEDIATELY'."\\n"
-    .'      2. COLLECT to env_vars: {name: "KEY", default: "value", description: "...", variants: "..."}'."\\n"
-    .'  '."\\n"
-    .'    Candidates: MAX_TASK_ESTIMATE_HOURS, DEFAULT_AGENT_MODEL, PARALLEL_TASKS'."\\n"
-    .'    Candidates: REQUIRE_TESTS, MIN_COVERAGE, CODE_REVIEW_ENABLED'."\\n"
-    .'  '."\\n"
-    .'  Apply prompt engineering: clarity, brevity, token efficiency'."\\n"
-    .'→ END-TASK', 'OUTPUT({master_php_content: "...", rules_kept: [...], rules_added: [...], rules_updated: [...], env_vars: [{name, default, description, variants}]})')
+- `4`: Task(@agent-prompt-master, 'INPUT(STORE-GET($CURRENT_MASTER_CONFIG) && STORE-GET($DISTRIBUTED_GUIDELINES.MASTER) && STORE-GET($ARCHITECTURE_PATTERNS))', TASK →
+  PRESERVE existing class structure, namespace, and extends IncludeArchetype
+  IF(CURRENT_MASTER_CONFIG.is_populated) →
+  MERGE MODE: File has existing content
+    - KEEP all existing rules/guidelines that are still relevant
+    - UPDATE rules if new discovery provides better info (same id, improved text)
+    - ADD only NEW rules/guidelines not already present
+    - REMOVE nothing unless explicitly obsolete
+    - Compare rule IDs to avoid duplicates
+→ ELSE →
+  FRESH MODE: File is empty/skeleton - add all discovered rules
+→ END-IF
+  Focus on agent execution patterns:
+    - How agents should approach project tasks
+    - Tool usage patterns for this project
+    - Code generation conventions
+    - Test writing patterns
+    - Quality gates before task completion
+  
+  CRITICAL - GENERATE CODE WITH $this->var() IMMEDIATELY:
+    WRONG: ->text("Max task estimate is 8 hours")
+    RIGHT: ->text(["Max task estimate is", $this->var("MAX_TASK_ESTIMATE_HOURS", 8), "hours"])
+    WRONG: $model = "sonnet";
+    RIGHT: $model = $this->var("DEFAULT_AGENT_MODEL", "sonnet");
+  
+    For EACH configurable value in generated code:
+      1. USE $this->var("KEY", default) IN THE CODE IMMEDIATELY
+      2. COLLECT to env_vars: {name: "KEY", default: "value", description: "...", variants: "..."}
+  
+    Candidates: MAX_TASK_ESTIMATE_HOURS, DEFAULT_AGENT_MODEL, PARALLEL_TASKS
+    Candidates: REQUIRE_TESTS, MIN_COVERAGE, CODE_REVIEW_ENABLED
+  
+  Apply prompt engineering: clarity, brevity, token efficiency
+→ END-TASK, 'OUTPUT({master_php_content: "...", rules_kept: [...], rules_added: [...], rules_updated: [...], env_vars: [{name, default, description, variants}]})')
 - `5`: Brain receives PromptMaster response with content + env_vars
 - `6`: STORE-AS($ENHANCED_MASTER_PHP)
 - `7`: TASK →
@@ -402,41 +523,41 @@ GOAL(Enhance Brain.php with Brain-specific orchestration rules ONLY)
 NOTE(CRITICAL: Preserve ALL existing #[Includes()] attributes - they define the Variation ONLY add Brain-specific rules (orchestration, delegation, synthesis) Common rules go to Common.php, agent rules go to Master.php)
 
 - `1`: Enhance handle() method with Brain-specific content only
-- `2`: Task(@agent-prompt-master, 'INPUT(STORE-GET($CURRENT_BRAIN_CONFIG) && STORE-GET($PROJECT_INCLUDES_RECOMMENDATION) && STORE-GET($DISTRIBUTED_GUIDELINES.BRAIN) && STORE-GET($PROJECT_CONTEXT))', 'TASK →'."\\n"
-    .'  PRESERVE existing #[Includes()] attributes (Variation) - DO NOT MODIFY'."\\n"
-    .'  PRESERVE existing class structure and namespace'."\\n"
-    .'  IF(CURRENT_BRAIN_CONFIG.is_populated) →'."\\n"
-    .'  MERGE MODE: File has existing handle() content'."\\n"
-    .'    - KEEP all existing rules/guidelines in handle() that are still relevant'."\\n"
-    .'    - UPDATE rules if new discovery provides better info (same id, improved text)'."\\n"
-    .'    - ADD only NEW Brain-specific rules not already present'."\\n"
-    .'    - REMOVE nothing unless explicitly obsolete'."\\n"
-    .'    - Compare rule IDs to avoid duplicates'."\\n"
-    .'→ ELSE →'."\\n"
-    .'  FRESH MODE: handle() is empty/skeleton - add all Brain-specific rules'."\\n"
-    .'→ END-IF'."\\n"
-    .'  Focus on Brain-specific rules only (Common/Master rules already distributed):'."\\n"
-    .'    - Orchestration and delegation strategies'."\\n"
-    .'    - Agent selection criteria for this project'."\\n"
-    .'    - Response synthesis patterns'."\\n"
-    .'    - Brain-level validation gates'."\\n"
-    .'  '."\\n"
-    .'  CRITICAL - GENERATE CODE WITH $this->var() IMMEDIATELY:'."\\n"
-    .'    WRONG: ->text("Default model is sonnet")'."\\n"
-    .'    RIGHT: ->text(["Default model is", $this->var("DEFAULT_MODEL", "sonnet")])'."\\n"
-    .'    WRONG: $depth = 2;'."\\n"
-    .'    RIGHT: $depth = $this->var("MAX_DELEGATION_DEPTH", 2);'."\\n"
-    .'  '."\\n"
-    .'    For EACH configurable value in generated code:'."\\n"
-    .'      1. USE $this->var("KEY", default) IN THE CODE IMMEDIATELY'."\\n"
-    .'      2. COLLECT to env_vars: {name: "KEY", default: "value", description: "...", variants: "..."}'."\\n"
-    .'  '."\\n"
-    .'    Candidates: DEFAULT_MODEL, MAX_DELEGATION_DEPTH, VALIDATION_THRESHOLD'."\\n"
-    .'    Candidates: ENABLE_PARALLEL_AGENTS, MAX_RETRIES, RESPONSE_MAX_TOKENS'."\\n"
-    .'  '."\\n"
-    .'  If suggested new project includes, add to #[Includes()] AFTER existing'."\\n"
-    .'  Apply prompt engineering: clarity, brevity, token efficiency'."\\n"
-    .'→ END-TASK', 'OUTPUT({brain_php_content: "...", preserved_variation: "...", rules_kept: [...], rules_added: [...], rules_updated: [...], env_vars: [{name, default, description, variants}]})')
+- `2`: Task(@agent-prompt-master, 'INPUT(STORE-GET($CURRENT_BRAIN_CONFIG) && STORE-GET($PROJECT_INCLUDES_RECOMMENDATION) && STORE-GET($DISTRIBUTED_GUIDELINES.BRAIN) && STORE-GET($PROJECT_CONTEXT))', TASK →
+  PRESERVE existing #[Includes()] attributes (Variation) - DO NOT MODIFY
+  PRESERVE existing class structure and namespace
+  IF(CURRENT_BRAIN_CONFIG.is_populated) →
+  MERGE MODE: File has existing handle() content
+    - KEEP all existing rules/guidelines in handle() that are still relevant
+    - UPDATE rules if new discovery provides better info (same id, improved text)
+    - ADD only NEW Brain-specific rules not already present
+    - REMOVE nothing unless explicitly obsolete
+    - Compare rule IDs to avoid duplicates
+→ ELSE →
+  FRESH MODE: handle() is empty/skeleton - add all Brain-specific rules
+→ END-IF
+  Focus on Brain-specific rules only (Common/Master rules already distributed):
+    - Orchestration and delegation strategies
+    - Agent selection criteria for this project
+    - Response synthesis patterns
+    - Brain-level validation gates
+  
+  CRITICAL - GENERATE CODE WITH $this->var() IMMEDIATELY:
+    WRONG: ->text("Default model is sonnet")
+    RIGHT: ->text(["Default model is", $this->var("DEFAULT_MODEL", "sonnet")])
+    WRONG: $depth = 2;
+    RIGHT: $depth = $this->var("MAX_DELEGATION_DEPTH", 2);
+  
+    For EACH configurable value in generated code:
+      1. USE $this->var("KEY", default) IN THE CODE IMMEDIATELY
+      2. COLLECT to env_vars: {name: "KEY", default: "value", description: "...", variants: "..."}
+  
+    Candidates: DEFAULT_MODEL, MAX_DELEGATION_DEPTH, VALIDATION_THRESHOLD
+    Candidates: ENABLE_PARALLEL_AGENTS, MAX_RETRIES, RESPONSE_MAX_TOKENS
+  
+  If suggested new project includes, add to #[Includes()] AFTER existing
+  Apply prompt engineering: clarity, brevity, token efficiency
+→ END-TASK, 'OUTPUT({brain_php_content: "...", preserved_variation: "...", rules_kept: [...], rules_added: [...], rules_updated: [...], env_vars: [{name, default, description, variants}]})')
 - `3`: Brain receives PromptMaster response with content + env_vars
 - `4`: STORE-AS($ENHANCED_BRAIN_PHP)
 - `5`: TASK →
@@ -477,17 +598,17 @@ GOAL(Validate syntax and compile all enhanced files)
 
 # Phase8 knowledge storage
 GOAL(Store all insights to vector memory for future reference)
-- `1`: mcp__vector-memory__store_memory('INPUT(content: "Brain Initialization - Project: {project_type}, Tech Stack: {tech_stack}, Patterns: {architecture_patterns}, Date: {current_date}" && category: "architecture" && tags: ["init-brain", "project-discovery", "configuration"])')
-- `2`: mcp__vector-memory__store_memory('INPUT(content: "Environment Discovery - Docker: {has_docker}, CI/CD: {cicd_platform}, Dev Tools: {dev_tools}, Date: {current_date}" && category: "architecture" && tags: ["init-brain", "environment", "infrastructure"])')
-- `3`: mcp__vector-memory__store_memory('INPUT(content: "Smart Distribution - Common: {common_rules_count} rules, Master: {master_rules_count} rules, Brain: {brain_rules_count} rules, Date: {current_date}" && category: "architecture" && tags: ["init-brain", "distribution", "configuration"])')
-- `4`: mcp__vector-memory__store_memory('INPUT(content: "Vector Memory Mining - Common: {vector_common_count}, Master: {vector_master_count}, Brain: {vector_brain_count}, Total `validated`: {vector_total_validated}, Date: {current_date}" && category: "learning" && tags: ["init-brain", "vector-mining", "insights"])')
+- `1`: mcp__vector-memory__store_memory('INPUT(content: "INIT-BRAIN|PROJECT:{project_type}|STACK:{tech_stack}|PATTERNS:{architecture_patterns}|DATE:{current_date}" && category: "architecture" && tags: ["insight", "project-wide"])')
+- `2`: mcp__vector-memory__store_memory('INPUT(content: "INIT-BRAIN ENV|DOCKER:{has_docker}|CI:{cicd_platform}|TOOLS:{dev_tools}|DATE:{current_date}" && category: "architecture" && tags: ["insight", "project-wide"])')
+- `3`: mcp__vector-memory__store_memory('INPUT(content: "INIT-BRAIN DISTRIBUTION|COMMON:{common_rules_count}|MASTER:{master_rules_count}|BRAIN:{brain_rules_count}|DATE:{current_date}" && category: "architecture" && tags: ["decision", "project-wide"])')
+- `4`: mcp__vector-memory__store_memory('INPUT(content: "INIT-BRAIN MINING|COMMON:{vector_common_count}|MASTER:{vector_master_count}|BRAIN:{vector_brain_count}|VALIDATED:{vector_total_validated}|DATE:{current_date}" && category: "learning" && tags: ["insight", "reusable"])')
 
 # Phase9 report
 GOAL(Generate comprehensive initialization report with smart distribution summary)
 - `1`: OUTPUT(Brain Ecosystem Initialization Complete  ═══════════════════════════════════════════════════════ SMART DISTRIBUTION SUMMARY ═══════════════════════════════════════════════════════  .brain/node/Common.php (Brain + ALL Agents):   Mode: {common_mode}   Kept: {common_rules_kept} | Added: {common_rules_added} | Updated: {common_rules_updated}   ENV vars: {common_env_count}  .brain/node/Master.php (ALL Agents only):   Mode: {master_mode}   Kept: {master_rules_kept} | Added: {master_rules_added} | Updated: {master_rules_updated}   ENV vars: {master_env_count}  .brain/node/Brain.php (Brain only):   Variation: {existing_variation_name} (PRESERVED)   Mode: {brain_mode}   Kept: {brain_rules_kept} | Added: {brain_rules_added} | Updated: {brain_rules_updated}   ENV vars: {brain_env_count}  ═══════════════════════════════════════════════════════ DISCOVERY RESULTS ═══════════════════════════════════════════════════════  Project:   Type: {project_type}   Tech Stack: {tech_stack}   Architecture: {architecture_patterns}  Environment:   Docker: {has_docker}   CI/CD Platform: {cicd_platform}   Dev Tools: {dev_tools}   Infrastructure: {infrastructure_services}  Documentation:   Files Analyzed: {docs_file_count}   Domain Concepts: {domain_concepts_count}   Requirements: {requirements_count}  Vector Memory Mining:   Total Mined: {vector_total_mined}   Critical Filtered: {vector_critical_count}   Added to Common: {vector_common_count}   Added to Master: {vector_master_count}   Added to Brain: {vector_brain_count}  ═══════════════════════════════════════════════════════ OUTPUT FILES ═══════════════════════════════════════════════════════  Source Files:   .brain/node/Brain.php   .brain/node/Common.php   .brain/node/Master.php  Compiled Output:   .claude/CLAUDE.md  Configuration:   .brain/.env   Variables: {env_settings_count} ({env_kept} kept, {env_added} added)  ═══════════════════════════════════════════════════════ VECTOR MEMORY ═══════════════════════════════════════════════════════    Insights Stored: {insights_count}   Categories: architecture, learning   Tags: init-brain, project-discovery, distribution  ═══════════════════════════════════════════════════════ NEXT STEPS ═══════════════════════════════════════════════════════    1. Review enhanced files:      - Common.php: shared environment/coding rules      - Master.php: agent execution patterns      - Brain.php: orchestration rules (Variation preserved)    2. If project includes suggested:      brain make:include {name}    3. Test Brain behavior with sample tasks    4. After any modifications:      brain compile    5. Consider running:      /init-agents for agent generation      /init-vector for vector memory population)
 
 # Error recovery
-Comprehensive error handling for all `failure` scenarios
+Command-specific error handling (trait provides baseline tool error / MCP `failure` policy)
 - `1`: IF(no .docs/ found) →
   Continue with codebase analysis only
   Log: Documentation not available

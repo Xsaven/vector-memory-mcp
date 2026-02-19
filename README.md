@@ -43,7 +43,9 @@ vector-memory-mcp/
 │   ├── models.py                      # Data models & configuration
 │   ├── security.py                    # Security validation & sanitization
 │   ├── embeddings.py                  # Sentence-transformers wrapper
-│   └── memory_store.py                # SQLite-vec operations
+│   ├── memory_store.py                # SQLite-vec operations
+│   ├── README_AGENTS.md               # Agent documentation (4 levels)
+│   └── CASES_AGENTS.md                # Use cases for Brain ecosystem
 │
 └── .gitignore                         # Git exclusions
 ```
@@ -293,6 +295,83 @@ Show tag weights
 Returns weights calculated as `1 / log(1 + frequency)`:
 - Common tags (api, auth) → lower weight (less discriminative)
 - Rare tags (module:terminal) → higher weight (more discriminative)
+
+#### 12. `cookbook` - Knowledge Base (CRITICAL)
+
+**CRITICAL: READ THIS FIRST before using any other tools. Without this, you are operating blind.**
+
+```
+# FIRST: Initialize context (READ THIS FIRST)
+mcp__vector-memory__cookbook()
+
+# List available categories with keys
+mcp__vector-memory__cookbook(include="categories")
+
+# Cases by key (exact match)
+mcp__vector-memory__cookbook(include="cases", case_category="gates-rules")
+mcp__vector-memory__cookbook(include="cases", case_category="search")
+
+# Search in cookbook
+mcp__vector-memory__cookbook(include="cases", query="JWT token")
+mcp__vector-memory__cookbook(include="docs", query="tag normalization", level=2)
+
+# Pagination
+mcp__vector-memory__cookbook(include="cases", query="task", limit=5, offset=0)
+
+# Documentation by level
+mcp__vector-memory__cookbook(include="docs", level=0)  # Quick start
+mcp__vector-memory__cookbook(include="docs", level=2)  # Advanced patterns
+
+# Full debug info
+mcp__vector-memory__cookbook(include="all", level=3)
+```
+
+**Parameters:**
+| Parameter | Values | Description |
+|-----------|--------|-------------|
+| `include` | "init", "docs", "cases", "categories", "all" | What to return (default "init") |
+| `level` | 0-3 | Docs verbosity (default 0) |
+| `case_category` | string | Filter cases by key (exact) or title (partial) |
+| `query` | string | Text search in content |
+| `limit` | 1-50 | Max results (default 10) |
+| `offset` | int | Pagination offset (default 0) |
+
+**Include Modes:**
+| Mode | Returns |
+|------|---------|
+| `init` | FIRST READ - quick start + available resources |
+| `docs` | Documentation by level |
+| `cases` | Use case scenarios (filtered by category/query) |
+| `categories` | List of categories with keys and descriptions |
+| `all` | Everything combined |
+
+**Docs Levels:**
+| Level | Content |
+|-------|---------|
+| 0 | Identity & Quick Start |
+| 1 | Practical Usage |
+| 2 | Advanced Patterns |
+| 3 | Architecture & Internals |
+
+**Category Keys:**
+| Key | Description |
+|-----|-------------|
+| `cookbook-usage` | How to use cookbook() tool |
+| `store` | Store memories with deduplication |
+| `search` | Multi-probe search, pre-task mining |
+| `statistics` | Memory stats, tag frequencies |
+| `task-management` | Memory integration with Task MCP |
+| `brain-docs` | CLI docs indexing |
+| `agent-coordination` | Brain delegation, multi-agent |
+| `integration` | Multi-source knowledge, error recovery |
+| `debugging` | Debug flow with memory capture |
+| `cleanup` | Delete operations, cleanup by age |
+| `gates-rules` | CRITICAL/HIGH priority rules |
+| `task-integration` | Memory-Task workflow patterns |
+
+**Case Categories:** Cookbook Usage, Store, Search, Statistics, Task Creation, Task Decomposition, Task Status, Brain Docs, Agent Coordination, Integration, Debugging, Cleanup
+
+**Contains:** 4 documentation levels + 12 use case categories + Brain ecosystem reference.
 
 ### Memory Categories
 

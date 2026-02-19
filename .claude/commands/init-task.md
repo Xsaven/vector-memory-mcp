@@ -12,6 +12,77 @@ description: "Initialize project tasks from documentation and codebase analysis"
 <provides>Aggressive project task initializer with MAXIMUM parallel agent orchestration. Scans every project corner via specialized agents, creates comprehensive epic-level tasks. NEVER executes - only creates.</provides>
 
 # Iron Rules
+## No-hallucination (CRITICAL)
+NEVER output results without ACTUALLY calling tools. You CANNOT know task status or content without REAL tool calls. Fake results = CRITICAL VIOLATION.
+
+## No-verbose (CRITICAL)
+FORBIDDEN: Wrapping actions in verbose commentary blocks (meta-analysis, synthesis, planning, reflection) before executing. Act FIRST, explain AFTER.
+
+## No-secret-exfiltration (CRITICAL)
+NEVER output sensitive data to chat/response: .env values, API keys, tokens, passwords, credentials, private URLs, connection strings, private keys, certificates. When reading config/.env for CONTEXT: extract key NAMES and STRUCTURE only, never raw values. If user asks to show .env or config with secrets: show key names, mask values as "***". If error output contains secrets: redact before displaying.
+- **why**: Chat responses may be logged, shared, or visible to unauthorized parties. Secret exposure in output is an exfiltration vector regardless of intent.
+- **on_violation**: REDACT immediately. Replace value with "***" or "[REDACTED]". Show key names only.
+
+## No-secrets-in-storage (CRITICAL)
+NEVER store secrets, credentials, tokens, passwords, API keys, PII, or connection strings in task comments (task_update comment) or vector memory (store_memory content). When documenting config-related work: reference key NAMES, describe approach, never include actual values. If error log contains secrets: strip sensitive values before storing. Acceptable: "Updated DB_HOST in .env", "Rotated API_KEY for service X". Forbidden: "Set DB_HOST=192.168.1.5", "API_KEY=sk-abc123...".
+- **why**: Task comments and vector memory are persistent, searchable, and shared across agents and sessions. Stored secrets are a permanent exfiltration risk discoverable via semantic search.
+- **on_violation**: Review content before store_memory/task_update. Strip all literal secret values. Keep only key names and descriptions.
+
+## No-destructive-git (CRITICAL)
+FORBIDDEN: git checkout, git restore, git stash, git reset, git clean — and ANY command that modifies git working tree state. These destroy uncommitted work from parallel agents, user WIP, and memory/ SQLite databases (vector memory + tasks). Rollback = Read original content + Write/Edit back. Git is READ-ONLY: status, diff, log, blame only.
+- **why**: memory/ folder contains project SQLite databases tracked in git. git checkout/stash/reset reverts these databases, destroying ALL tasks and memories. Parallel agents have uncommitted changes — any working tree modification wipes their work. Unrecoverable data loss.
+- **on_violation**: ABORT git command. Use Read to get original content, Write/Edit to restore specific files. Never touch git working tree state.
+
+## No-destructive-git-in-agents (CRITICAL)
+When delegating to agents: ALWAYS include in prompt: "FORBIDDEN: git checkout, git restore, git stash, git reset, git clean. Rollback = Read + Write. Git is READ-ONLY."
+- **why**: Sub-agents do not inherit parent rules. Without explicit prohibition, agents will use git for rollback and destroy parallel work.
+- **on_violation**: Add git prohibition to agent prompt before delegation.
+
+## Memory-folder-sacred (CRITICAL)
+memory/ folder contains SQLite databases (vector memory + tasks). SACRED — protect at ALL times. NEVER git checkout/restore/reset/clean memory/ — these DESTROY all project knowledge irreversibly. In PARALLEL CONTEXT: use "git add {specific_files}" (task-scope only) — memory/ excluded implicitly because it is not in task files. In NON-PARALLEL context: "git add -A" is safe and DESIRED — includes memory/ for full state checkpoint preserving knowledge base alongside code.
+- **why**: memory/ is the project persistent brain. Destructive git commands on memory/ = total knowledge loss. In parallel mode, concurrent SQLite writes + git add -A = binary merge conflicts and staged half-done sibling work. In sequential mode, committing memory/ preserves full project state for safe revert.
+- **on_violation**: NEVER destructive git on memory/. Parallel: git add specific files only (memory/ not in scope). Non-parallel: git add -A (full checkpoint with memory/).
+
+## Task-tags-predefined-only (CRITICAL)
+Task tags MUST use ONLY predefined values. FORBIDDEN: inventing new tags, synonyms, variations. Allowed: decomposed, validation-fix, blocked, stuck, needs-research, light-validation, parallel-safe, atomic, manual-only, regression, feature, bugfix, refactor, research, docs, test, chore, spike, hotfix, backend, frontend, database, api, auth, ui, config, infra, ci-cd, migration, strict:relaxed, strict:standard, strict:strict, strict:paranoid, cognitive:minimal, cognitive:standard, cognitive:deep, cognitive:exhaustive, batch:trivial.
+- **why**: Ad-hoc tags cause explosion ("user-auth", "authentication", "auth" = same thing, search finds none). Predefined list = consistent search.
+- **on_violation**: Replace with closest predefined match. No match = skip tag, put context in content.
+
+## Memory-tags-predefined-only (CRITICAL)
+Memory tags MUST use ONLY predefined values. Allowed: pattern, solution, `failure`, decision, insight, workaround, deprecated, project-wide, module-specific, temporary, reusable.
+- **why**: Unknown tags = unsearchable memories. Predefined = discoverable.
+- **on_violation**: Replace with closest predefined match.
+
+## Memory-categories-predefined-only (CRITICAL)
+Memory category MUST be one of: code-solution, bug-fix, architecture, learning, debugging, performance, security, project-context. FORBIDDEN: "other", "general", "misc", or unlisted.
+- **why**: "other" is garbage nobody searches. Every memory needs meaningful category.
+- **on_violation**: Choose most relevant from predefined list.
+
+## Mandatory-level-tags (CRITICAL)
+EVERY task MUST have exactly ONE strict:* tag AND ONE cognitive:* tag. Allowed strict: strict:relaxed, strict:standard, strict:strict, strict:paranoid. Allowed cognitive: cognitive:minimal, cognitive:standard, cognitive:deep, cognitive:exhaustive. Missing level tags = assign based on task scope analysis.
+- **why**: Level tags enable per-task compilation and cognitive load calibration. Without them, system defaults apply blindly regardless of task complexity.
+- **on_violation**: Analyze task scope and assign: strict:{level} + cognitive:{level}. Simple rename = strict:relaxed + cognitive:minimal. Production auth = strict:strict + cognitive:deep.
+
+## Safety-escalation-non-overridable (CRITICAL)
+After loading task, check file paths in task.content/comment. If files match safety patterns → effective level MUST be >= pattern minimum, regardless of task tags or .env default. Agent tags are suggestions UPWARD only — can raise above safety floor, never lower below it.
+- **why**: Safety patterns guarantee minimum protection for critical code areas. Agent cannot "cheat" by under-tagging a task touching auth/ or payments/.
+- **on_violation**: Raise effective level to safety floor. Log escalation in task comment.
+
+## Failure-policy-tool-error (CRITICAL)
+TOOL ERROR / MCP FAILURE: 1) Retry ONCE with same parameters. 2) Still fails → STOP current step. 3) Store `failure` to memory (category: "debugging", tags: ["failure"]). 4) Update task comment: "BLOCKED: {tool} failed after retry. Error: {msg}", append_comment: true. 5) -y mode: set status "pending" (return to queue for retry), abort current workflow. Interactive: ask user "Tool failed. Retry/Skip/Abort?". NEVER set "stopped" on `failure` — "stopped" = permanently cancelled.
+- **why**: Consistent tool `failure` handling across all commands. One retry catches transient issues. Failed task returns to `pending` queue — it is NOT cancelled, just needs another attempt or manual intervention.
+- **on_violation**: Follow 5-step sequence. Max 1 retry for same tool call. Always store `failure` to memory. Status → `pending`, NEVER `stopped`.
+
+## Failure-policy-missing-docs (HIGH)
+MISSING DOCS: 1) Apply aggressive-docs-search (3+ keyword variations). 2) All variations exhausted → conclude "no docs". 3) Proceed using: task.content (primary spec) + vector memory context + parent task context. 4) Log in task comment: "No documentation found after {N} search attempts. Proceeding with task.content.", append_comment: true. NOT a blocker — absence of docs is information, not `failure`.
+- **why**: Missing docs must not block execution. task.content is the minimum viable specification. Blocking on missing docs causes pipeline stalls for tasks that never had docs.
+- **on_violation**: Never block on missing docs. Search aggressively, then proceed with available context.
+
+## Failure-policy-ambiguous-spec (HIGH)
+AMBIGUOUS SPEC: 1) Identify SPECIFIC ambiguity (not "task is unclear" but "field X: type A or B?"). 2) -y mode: choose conservative/safe interpretation, log decision in task comment: "DECISION: interpreted {X} as {Y} because {reason}", append_comment: true. 3) Interactive: ask ONE targeted question about the SPECIFIC gap. 4) After 1 clarification → proceed. NEVER ask open-ended "what did you mean?" or multiple follow-ups.
+- **why**: Ambiguity paralysis wastes more time than conservative interpretation. One precise question is enough — if user wanted detailed spec, they would have written docs.
+- **on_violation**: Identify specific gap. One question or auto-decide. Proceed.
+
 ## Parallel-agent-execution (CRITICAL)
 Launch INDEPENDENT research agents in PARALLEL (multiple Task calls in single response)
 - **why**: Maximizes coverage, reduces total research time, comprehensive analysis
@@ -32,10 +103,10 @@ This command ONLY creates root tasks. NEVER execute any task after creation.
 - **why**: Init-task creates strategic foundation. Execution via /task:next or /do
 - **on_violation**: STOP immediately after task creation
 
-## Mandatory-user-approval (CRITICAL)
-MUST get explicit user YES/APPROVE/CONFIRM before creating ANY tasks
-- **why**: User must validate task breakdown before committing
-- **on_violation**: Present task list and wait for explicit confirmation
+## Auto-approve-default (CRITICAL)
+When $HAS_AUTO_APPROVE = false: MUST get explicit user YES/APPROVE/CONFIRM before creating ANY tasks. When $HAS_AUTO_APPROVE = true: auto-approve after presenting summary. Proceed autonomously through creation.
+- **why**: User must validate task breakdown before committing. -y flag enables pipeline usage.
+- **on_violation**: If interactive: present task list and wait for explicit confirmation. If auto-approve: show summary and proceed.
 
 ## Estimate-required (CRITICAL)
 MUST provide time estimate (8-40h) for EACH epic
@@ -48,9 +119,54 @@ NEVER analyze .brain/ - Brain system internals, not project code
 - **on_violation**: Skip .brain/ in all exploration phases
 
 
+# Task tag selection
+GOAL(Select tags per task. Combine dimensions for precision.)
+WORKFLOW (pipeline stage): decomposed, validation-fix, blocked, stuck, needs-research, light-validation, parallel-safe, atomic, manual-only, regression
+TYPE (work kind): feature, bugfix, refactor, research, docs, test, chore, spike, hotfix
+DOMAIN (area): backend, frontend, database, api, auth, ui, config, infra, ci-cd, migration
+STRICT LEVEL: strict:relaxed, strict:standard, strict:strict, strict:paranoid
+COGNITIVE LEVEL: cognitive:minimal, cognitive:standard, cognitive:deep, cognitive:exhaustive
+BATCH: batch:trivial
+Formula: 1 TYPE + 1 DOMAIN + 0-2 WORKFLOW + 1 STRICT + 1 COGNITIVE. Example: ["feature", "api", "strict:standard", "cognitive:standard"] or ["bugfix", "auth", "validation-fix", "strict:strict", "cognitive:deep"].
+
+# Memory tag selection
+GOAL(Select 1-3 tags per memory. Combine dimensions.)
+CONTENT (kind): pattern, solution, `failure`, decision, insight, workaround, deprecated
+SCOPE (breadth): project-wide, module-specific, temporary, reusable
+Formula: 1 CONTENT + 0-1 SCOPE. Example: ["solution", "reusable"] or ["failure", "module-specific"]. Max 3 tags.
+
+# Safety escalation patterns
+GOAL(Automatic level escalation based on file patterns and context)
+File patterns → strict minimum: auth/, guards/, policies/, permissions/ → strict. payments/, billing/, stripe/, subscription/ → strict. .env, credentials, secrets, config/auth → paranoid. migrations/, schema → strict. composer.json, package.json, *.lock → standard. CI/, .github/, Dockerfile, docker-compose → strict. routes/, middleware/ → standard.
+Context patterns → level minimum: priority=critical → strict+deep. tag hotfix or production → strict+standard. touches >10 files → standard+standard. tag breaking-change → strict+deep. Keywords security/encryption/auth/permission → strict. Keywords migration/schema/database/drop → strict.
+
+# Cognitive level
+GOAL(Cognitive level: standard — calibrate analysis depth accordingly)
+Memory probes per phase: 2-3 targeted
+Failure history: recent only
+Research (context7/web): on error/ambiguity
+Agent scaling: auto (2-3)
+Comment parsing: basic parse
+
+# Aggressive docs search
+GOAL(Find documentation even if named differently than task/code)
+- `1`: Generate keyword variations from task title/content:
+- `2`:   1. Original: "FocusModeTest" → search "FocusModeTest"
+- `3`:   2. Split CamelCase: "FocusModeTest" → search "FocusMode", "Focus Mode"
+- `4`:   3. Remove suffix: "FocusModeTest" → search "Focus" (remove Mode, Test)
+- `5`:   4. Domain words: extract meaningful nouns → search each
+- `6`:   5. Parent context: if task has parent → include parent title keywords
+- `7`: Common suffixes to STRIP: Test, Tests, Controller, Service, Repository, Command, Handler, Provider, Factory, Manager, Helper, Validator, Processor
+- `8`: Search ORDER: most specific → most general. STOP when found.
+- `9`: Minimum 3 search attempts before concluding "no documentation".
+- `10`: WRONG: brain docs "UserAuthenticationServiceTest" → not found → done
+- `11`: RIGHT: brain docs "UserAuthenticationServiceTest" → not found → brain docs "UserAuthentication" → not found → brain docs "Authentication" → FOUND!
+
 # Input
 STORE-AS($RAW_INPUT = $ARGUMENTS)
-STORE-AS($INIT_PARAMS = {initialization parameters extracted from $RAW_INPUT})
+STORE-AS($HAS_AUTO_APPROVE = {true if $RAW_INPUT contains "-y" or "--yes"})
+STORE-AS($CLEAN_ARGS = {$RAW_INPUT with -y/--yes flags removed})
+STORE-AS($INIT_SCOPE = {optional scope filter from $CLEAN_ARGS: specific area/focus for task generation, or empty for full project})
 
 # Phase0 preflight
 GOAL(Check existing state, determine mode)
@@ -68,38 +184,38 @@ IF($TASK_STATE.total === 0) → Fresh init → proceed IF($TASK_STATE.total > 0)
 
 # Phase1 structure
 GOAL(Quick structure scan to identify ALL areas for parallel exploration)
-- `1`: Task(@agent-explore, 'TASK →'."\\n"
-    .'  QUICK STRUCTURE SCAN - identify directories only'."\\n"
-    .'  Glob("*") → list root directories and key files'."\\n"
-    .'  EXCLUDE: .brain/, vendor/, node_modules/, .git/'."\\n"
-    .'  IDENTIFY: code(src/app), tests, config, docs(.docs), migrations, routes, build, public'."\\n"
-    .'  Output JSON: {areas: [{path, type, estimated_files, priority}]}'."\\n"
-    .'→ END-TASK', 'OUTPUT({areas: [{path, type, estimated_files, priority: critical|high|medium|low}]})', 'STORE-AS($PROJECT_AREAS)')
+- `1`: Task(@agent-explore, TASK →
+  QUICK STRUCTURE SCAN - identify directories only
+  Glob("*") → list root directories and key files
+  EXCLUDE: .brain/, vendor/, node_modules/, .git/
+  IDENTIFY: code(src/app), tests, config, docs(.docs), migrations, routes, build, public
+  Output JSON: {areas: [{path, type, estimated_files, priority}]}
+→ END-TASK, 'OUTPUT({areas: [{path, type, estimated_files, priority: critical|high|medium|low}]})', 'STORE-AS($PROJECT_AREAS)')
 
 # Phase2 parallel code
 GOAL(PARALLEL: Launch code exploration agents simultaneously)
 - `1`: 
 BATCH 1 - Core Code Areas (LAUNCH IN PARALLEL):
-Task(@agent-explore, 'TASK →'."\\n"
-    .'  Area: src/ or app/ (MAIN CODE)'."\\n"
-    .'  Thoroughness: very thorough'."\\n"
-    .'  ANALYZE: directory structure, namespaces, classes, design patterns'."\\n"
-    .'  IDENTIFY: entry points, core modules, service layers, models'."\\n"
-    .'  EXTRACT: {path|files_count|classes|namespaces|patterns|complexity}'."\\n"
-    .'  FOCUS ON: what needs to be built/refactored/improved'."\\n"
-    .'→ END-TASK', 'OUTPUT({path:"src",files:N,modules:[],patterns:[],tech_debt:[]})', 'STORE-AS($CODE_ANALYSIS)') Task(@agent-explore, 'TASK →'."\\n"
-    .'  Area: tests/ (TEST COVERAGE)'."\\n"
-    .'  Thoroughness: medium'."\\n"
-    .'  ANALYZE: test structure, frameworks, coverage areas'."\\n"
-    .'  IDENTIFY: `tested` modules, missing coverage, test patterns'."\\n"
-    .'  EXTRACT: {path|test_files|framework|covered_modules|gaps}'."\\n"
-    .'→ END-TASK', 'OUTPUT({path:"tests",files:N,framework:str,coverage_gaps:[]})', 'STORE-AS($TEST_ANALYSIS)') Task(@agent-explore, 'TASK →'."\\n"
-    .'  Area: database/ + migrations/ (DATA LAYER)'."\\n"
-    .'  Thoroughness: thorough'."\\n"
-    .'  ANALYZE: migrations, seeders, factories, schema'."\\n"
-    .'  IDENTIFY: tables, relationships, indexes, `pending` migrations'."\\n"
-    .'  EXTRACT: {migrations_count|tables|relationships|pending_changes}'."\\n"
-    .'→ END-TASK', 'OUTPUT({migrations:N,tables:[],relationships:[],`pending`:[]})', 'STORE-AS($DATABASE_ANALYSIS)')
+Task(@agent-explore, TASK →
+  Area: src/ or app/ (MAIN CODE)
+  Thoroughness: very thorough
+  ANALYZE: directory structure, namespaces, classes, design patterns
+  IDENTIFY: entry points, core modules, service layers, models
+  EXTRACT: {path|files_count|classes|namespaces|patterns|complexity}
+  FOCUS ON: what needs to be built/refactored/improved
+→ END-TASK, 'OUTPUT({path:"src",files:N,modules:[],patterns:[],tech_debt:[]})', 'STORE-AS($CODE_ANALYSIS)') Task(@agent-explore, TASK →
+  Area: tests/ (TEST COVERAGE)
+  Thoroughness: medium
+  ANALYZE: test structure, frameworks, coverage areas
+  IDENTIFY: `tested` modules, missing coverage, test patterns
+  EXTRACT: {path|test_files|framework|covered_modules|gaps}
+→ END-TASK, 'OUTPUT({path:"tests",files:N,framework:str,coverage_gaps:[]})', 'STORE-AS($TEST_ANALYSIS)') Task(@agent-explore, TASK →
+  Area: database/ + migrations/ (DATA LAYER)
+  Thoroughness: thorough
+  ANALYZE: migrations, seeders, factories, schema
+  IDENTIFY: tables, relationships, indexes, `pending` migrations
+  EXTRACT: {migrations_count|tables|relationships|pending_changes}
+→ END-TASK, 'OUTPUT({migrations:N,tables:[],relationships:[],`pending`:[]})', 'STORE-AS($DATABASE_ANALYSIS)')
 
 - `2`: NOTE: All 3 ExploreMaster agents run SIMULTANEOUSLY
 
@@ -107,25 +223,25 @@ Task(@agent-explore, 'TASK →'."\\n"
 GOAL(PARALLEL: Config, routes, and infrastructure analysis)
 - `1`: 
 BATCH 2 - Config & Infrastructure (LAUNCH IN PARALLEL):
-Task(@agent-explore, 'TASK →'."\\n"
-    .'  Area: config/ (CONFIGURATION)'."\\n"
-    .'  Thoroughness: quick'."\\n"
-    .'  ANALYZE: config files, env vars, service bindings'."\\n"
-    .'  IDENTIFY: services configured, missing configs, security settings'."\\n"
-    .'  EXTRACT: {configs:[names],services:[],env_vars_needed:[]}'."\\n"
-    .'→ END-TASK', 'OUTPUT({configs:[],services:[],security_gaps:[]})', 'STORE-AS($CONFIG_ANALYSIS)') Task(@agent-explore, 'TASK →'."\\n"
-    .'  Area: routes/ (API SURFACE)'."\\n"
-    .'  Thoroughness: thorough'."\\n"
-    .'  ANALYZE: route definitions, middleware, controllers'."\\n"
-    .'  IDENTIFY: endpoints, auth requirements, API versioning'."\\n"
-    .'  EXTRACT: {routes_count|endpoints:[method,path,controller]|middleware:[]}'."\\n"
-    .'→ END-TASK', 'OUTPUT({routes:N,api_endpoints:[],web_routes:[],middleware:[]})', 'STORE-AS($ROUTES_ANALYSIS)') Task(@agent-explore, 'TASK →'."\\n"
-    .'  Area: build/CI (.github/, docker*, Makefile)'."\\n"
-    .'  Thoroughness: quick'."\\n"
-    .'  ANALYZE: CI/CD pipelines, Docker setup, build scripts'."\\n"
-    .'  IDENTIFY: deployment process, missing CI steps, containerization'."\\n"
-    .'  EXTRACT: {ci:bool,docker:bool,pipelines:[],missing:[]}'."\\n"
-    .'→ END-TASK', 'OUTPUT({ci:bool,docker:bool,deployment_ready:bool,gaps:[]})', 'STORE-AS($BUILD_ANALYSIS)')
+Task(@agent-explore, TASK →
+  Area: config/ (CONFIGURATION)
+  Thoroughness: quick
+  ANALYZE: config files, env vars, service bindings
+  IDENTIFY: services configured, missing configs, security settings
+  EXTRACT: {configs:[names],services:[],env_vars_needed:[]}
+→ END-TASK, 'OUTPUT({configs:[],services:[],security_gaps:[]})', 'STORE-AS($CONFIG_ANALYSIS)') Task(@agent-explore, TASK →
+  Area: routes/ (API SURFACE)
+  Thoroughness: thorough
+  ANALYZE: route definitions, middleware, controllers
+  IDENTIFY: endpoints, auth requirements, API versioning
+  EXTRACT: {routes_count|endpoints:[method,path,controller]|middleware:[]}
+→ END-TASK, 'OUTPUT({routes:N,api_endpoints:[],web_routes:[],middleware:[]})', 'STORE-AS($ROUTES_ANALYSIS)') Task(@agent-explore, TASK →
+  Area: build/CI (.github/, docker*, Makefile)
+  Thoroughness: quick
+  ANALYZE: CI/CD pipelines, Docker setup, build scripts
+  IDENTIFY: deployment process, missing CI steps, containerization
+  EXTRACT: {ci:bool,docker:bool,pipelines:[],missing:[]}
+→ END-TASK, 'OUTPUT({ci:bool,docker:bool,deployment_ready:bool,gaps:[]})', 'STORE-AS($BUILD_ANALYSIS)')
 
 - `2`: NOTE: All 3 agents run SIMULTANEOUSLY with Batch 1
 
@@ -141,12 +257,12 @@ IF(docs_count <= 3) → Single DocumentationMaster for all IF(docs_count 4-8) �
 
 - `3`: 
 STEP 3 - DocumentationMaster for comprehensive doc analysis:
-Task(@agent-documentation-master, 'TASK →'."\\n"
-    .'  Analyze ALL project documentation from DOCS_INDEX'."\\n"
-    .'  Read: README*, CONTRIBUTING*, ARCHITECTURE*, API docs, .docs/*.md'."\\n"
-    .'  EXTRACT: {name|purpose|requirements|constraints|decisions|endpoints|integrations}'."\\n"
-    .'  FOCUS ON: project goals, requirements, API contracts, integrations'."\\n"
-    .'→ END-TASK', 'OUTPUT({docs_analyzed:N,requirements:[],constraints:[],api_specs:[],integrations:[]})', 'STORE-AS($DOCS_ANALYSIS)')
+Task(@agent-documentation-master, TASK →
+  Analyze ALL project documentation from DOCS_INDEX
+  Read: README*, CONTRIBUTING*, ARCHITECTURE*, API docs, .docs/*.md
+  EXTRACT: {name|purpose|requirements|constraints|decisions|endpoints|integrations}
+  FOCUS ON: project goals, requirements, API contracts, integrations
+→ END-TASK, 'OUTPUT({docs_analyzed:N,requirements:[],constraints:[],api_specs:[],integrations:[]})', 'STORE-AS($DOCS_ANALYSIS)')
 
 
 # Phase5 vector research
@@ -165,12 +281,12 @@ GOAL(WebResearchMaster for external dependencies and APIs)
 - `1`: 
 CONDITIONAL: If project uses external services/APIs:
 IF(external services detected in config/routes analysis) →
-  Task(@agent-web-research-master, 'TASK →'."\\n"
-    .'  Research external dependencies: {detected_services}'."\\n"
-    .'  Find: API documentation, rate limits, best practices'."\\n"
-    .'  Find: known issues, integration patterns, gotchas'."\\n"
-    .'  OUTPUT: integration requirements, constraints, risks'."\\n"
-    .'→ END-TASK', 'OUTPUT({services_researched:N,requirements:[],risks:[]})', 'STORE-AS($EXTERNAL_CONTEXT)')
+  Task(@agent-web-research-master, TASK →
+  Research external dependencies: {detected_services}
+  Find: API documentation, rate limits, best practices
+  Find: known issues, integration patterns, gotchas
+  OUTPUT: integration requirements, constraints, risks
+→ END-TASK, 'OUTPUT({services_researched:N,requirements:[],risks:[]})', 'STORE-AS($EXTERNAL_CONTEXT)')
 → ELSE →
   SKIP(No external dependencies detected)
 → END-IF
@@ -184,12 +300,12 @@ STORE-GET($CODE_ANALYSIS) STORE-GET($TEST_ANALYSIS) STORE-GET($DATABASE_ANALYSIS
 
 - `2`: 
 SEQUENTIAL THINKING for strategic decomposition:
-mcp__sequential-thinking__sequentialthinking('{'."\\n"
-    .'                    thought: "Analyzing comprehensive research from 8+ parallel agents. Synthesizing into strategic epics.",'."\\n"
-    .'                    thoughtNumber: 1,'."\\n"
-    .'                    totalThoughts: 8,'."\\n"
-    .'                    nextThoughtNeeded: true'."\\n"
-    .'                }')
+mcp__sequential-thinking__sequentialthinking({
+                    thought: "Analyzing comprehensive research from 8+ parallel agents. Synthesizing into strategic epics.",
+                    thoughtNumber: 1,
+                    totalThoughts: 8,
+                    nextThoughtNeeded: true
+                })
 
 - `3`: 
 SYNTHESIS STEPS:
@@ -210,7 +326,7 @@ FOUNDATION: setup, infrastructure, CI/CD, database schema CORE: main features, b
 - `3`: STORE-AS($EPIC_LIST = [{title, content, priority, estimate, tags, dependencies}])
 
 # Phase9 approval
-GOAL(Present epics for user approval (MANDATORY GATE))
+GOAL(Present epics for user approval (conditional on $HAS_AUTO_APPROVE))
 - `1`: 
 FORMAT epic list as table:
 # | Epic Title | Priority | Estimate | Dependencies | Tags ---|------------|----------|----------|--------------|----- 1 | Foundation Setup | critical | 16h | - | [epic,infra,setup] 2 | Core Models | high | 24h | #1 | [epic,backend,models] ... (all epics)
@@ -219,10 +335,11 @@ FORMAT epic list as table:
 SUMMARY:
 Total epics: {count} Total estimated hours: {sum} Critical path: {epics with dependencies} Research agents used: {count} (Explore, Doc, Vector, Web) Areas analyzed: code, tests, database, config, routes, build, docs, memory
 
-- `3`: 
-PROMPT:
-Ask: "Approve epic creation? (yes/no/modify)" VALIDATE(User response is YES, APPROVE, or CONFIRM) → FAILS → Wait for explicit approval
-
+- `3`: IF(NOT $HAS_AUTO_APPROVE) →
+  Ask: "Approve epic creation? (yes/no/modify)"
+  VALIDATE(User response is YES, APPROVE, or CONFIRM) → FAILS → Wait for explicit approval
+→ END-IF
+- `4`: IF($HAS_AUTO_APPROVE) → Auto-approved. Proceeding to task creation.
 
 # Phase10 create
 GOAL(Create epics in vector task system after approval)
@@ -239,11 +356,11 @@ mcp__vector-task__task_stats('{}') Confirm: {count} epics created
 GOAL(Report completion, store insight, STOP)
 - `1`: 
 STORE initialization insight:
-mcp__vector-memory__store_memory('{'."\\n"
-    .'                    content: "PROJECT_INIT|epics:{count}|hours:{total}|areas:{list}|stack:{tech}|critical_path:{deps}",'."\\n"
-    .'                    category: "architecture",'."\\n"
-    .'                    tags: ["project-init", "epics", "planning", "init-task"]'."\\n"
-    .'                }')
+mcp__vector-memory__store_memory({
+                    content: "INIT-TASK|epics:{count}|hours:{total}|areas:{list}|stack:{tech}|critical_path:{deps}",
+                    category: "architecture",
+                    tags: ["insight", "project-wide"]
+                })
 
 - `2`: 
 REPORT:
@@ -266,6 +383,28 @@ Epic estimation guidelines
 - 24-32h: Architectural, integrations
 - 32-40h: Foundational, high complexity
 - >40h: Split into multiple epics
+
+# Error recovery
+Command-specific error handling (trait provides baseline tool error / MCP `failure` policy)
+- no .docs/ → codebase analysis only, continue
+- agent timeout → skip area, continue, report in summary
+- task_create_bulk fails → retry individually, report failures
+- vector memory unavailable → skip prior knowledge, continue
+- user rejects epics → revise based on feedback, re-propose
+- external research fails → local analysis only, -0.2 confidence
+
+# Quality gates
+Validation checkpoints
+- Gate 1: pre-flight task state checked
+- Gate 2: structure discovery `completed` (PROJECT_AREAS populated)
+- Gate 3: all parallel exploration batches returned
+- Gate 4: documentation analysis `completed`
+- Gate 5: vector memory research `completed`
+- Gate 6: synthesis produced actionable epics
+- Gate 7: each epic has title, content, priority, estimate, tags
+- Gate 8: user approval obtained (or auto-approved)
+- Gate 9: task_create_bulk succeeded
+- Gate 10: completion insight stored to vector memory
 
 # Parallel pattern
 How to execute agents in parallel

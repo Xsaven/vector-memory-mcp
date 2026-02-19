@@ -807,4 +807,6 @@ Commands MUST NOT have #[Includes()] attributes. Commands inherit Brain context.
 - **why**: Commands execute in Brain context where includes are already loaded. Duplication bloats output.
 - **on_violation**: Remove ALL #[Includes()] from Command classes.
 
+
+<brevity>medium</brevity>
 </system>

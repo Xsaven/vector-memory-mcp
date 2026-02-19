@@ -79,11 +79,11 @@ STEP 4 - Present Memory for User Approval (MANDATORY)
 
 # Workflow step5
 STEP 5 - Store Memory After Approval
-- `store`: mcp__vector-memory__store_memory('{'."\\n"
-    .'                content: "STORE-GET($INPUT).content",'."\\n"
-    .'                category: "STORE-GET($SUGGESTION).category",'."\\n"
-    .'                tags: STORE-GET($SUGGESTION).tags'."\\n"
-    .'            }')
+- `store`: mcp__vector-memory__store_memory({
+                content: "STORE-GET($INPUT).content",
+                category: "STORE-GET($SUGGESTION).category",
+                tags: STORE-GET($SUGGESTION).tags
+            })
 - `confirm`: Display: "Memory stored successfully"
 
 # Categories
