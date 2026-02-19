@@ -540,6 +540,73 @@ search("cache issue", category="performance", tags=["redis"])
 
 ---
 
+## Anti-Patterns
+
+### ❌ Tagging Tools/Activities
+
+```
+BAD: tags=["phpstan", "ci", "run-tests", "fixed"]
+GOOD: tags=["authentication", "laravel", "security"]
+```
+
+Tags describe SUBJECT, not what you DID.
+
+### ❌ Vague Content
+
+```
+BAD: "Fixed the bug"
+GOOD: "N+1 query in UserController@store. Fix: ->with('roles'). Pattern: eager load relationships."
+```
+
+Future you needs context to understand and apply.
+
+### ❌ Storing Without Searching
+
+```
+BAD: Immediately store_memory()
+GOOD: search() first → if not found → store
+```
+
+Prevents duplicates and discovers existing knowledge.
+
+### ❌ Single Generic Search
+
+```
+BAD: search("fix the problem")
+GOOD: search("jwt invalid") + search("token refresh") + search("auth middleware")
+```
+
+One query = one semantic radius. Multiple probes = better coverage.
+
+### ❌ Over-Tagging
+
+```
+BAD: tags=["api", "v2", "auth", "jwt", "token", "user", "login", "session"]
+GOOD: tags=["api v2", "jwt", "authentication"]
+```
+
+Max 10 tags, but 3-5 is optimal. More tags ≠ better search.
+
+### ❌ Storing Execution Logs
+
+```
+BAD: "Ran phpstan, found 5 errors, fixed them"
+GOOD: "PhpStan rule: always declare strict_types. Prevents type coercion bugs."
+```
+
+Store knowledge, not activity logs.
+
+### ❌ Ignoring Duplicates
+
+```
+BAD: Store anyway when "Memory already exists"
+GOOD: Check existing memory_id, update or reference it
+```
+
+Duplicates pollute search results and waste space.
+
+---
+
 ## Common Patterns
 
 ### Pattern: Store Solution
