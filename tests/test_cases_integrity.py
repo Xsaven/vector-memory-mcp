@@ -144,7 +144,7 @@ class TestCasesIntegrity:
         content = CASES_FILE.read_text()
         
         gates_match = re.search(
-            r'^## Gates & Rules.*?(?=^## |\Z)',
+            r'^## Gates.*?Rules.*?(?=^## |\Z)',
             content,
             re.MULTILINE | re.DOTALL
         )

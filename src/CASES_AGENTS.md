@@ -1354,7 +1354,7 @@ Priority (keeps first):
 ---
 ---
 
-## Gates & Rules Scenarios
+## Gates Rules Scenarios
 <!-- description: CRITICAL and HIGH priority rules. MCP-only, multi-probe, search-before-store. -->
 
 Critical rules and guardrails for memory operations. Violations break system integrity.
