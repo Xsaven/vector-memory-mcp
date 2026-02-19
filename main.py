@@ -745,7 +745,7 @@ def create_server() -> FastMCP:
                                 section_content = filter_by_tag_pattern(section_content, "cognitive", cognitive_list)
                             if strict_list:
                                 section_content = filter_by_tag_pattern(section_content, "strict", strict_list)
-                            combined_content += f"\n\n---\n\n## {section_title}\n\n{section_content}"
+                            combined_content += f"\n\n---\n\n{section_content}"
                         
                         if query:
                             combined_content = _filter_by_query(combined_content, query, limit, offset)
