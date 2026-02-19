@@ -309,7 +309,43 @@ LESSON: {what_we_learned_about_proposal_quality}""",
 
 ---
 
-## Section F: Non-Goals [CRITICAL]
+## Section F: Six Constitutional Gates [CRITICAL]
+
+### Purpose
+
+Six mandatory gates that protect system integrity. Each gate is self-contained and MUST be enforced.
+
+### Gates Overview
+
+| Gate | Purpose | Trigger |
+|------|---------|---------|
+| **1. MCP-JSON-ONLY** | All MCP calls via JSON-RPC | Any operation |
+| **2. Lightweight Lawyer Gate** | Proposals pass 5-check | Self-improvement |
+| **3. Constitutional Learn Protocol** | Failures store lessons | Trigger signals |
+| **4. Category Discipline** | Fixed categories only | Any storage |
+| **5. Cookbook-First** | Check cookbook before assuming | Uncertainty |
+| **6. Failure Escalation** | Escalate by severity | Any failure |
+
+### Enforcement
+
+```python
+# Gate enforcement check
+for gate in SIX_CONSTITUTIONAL_GATES:
+    if gate.triggered():
+        if not gate.passed():
+            if gate.severity == "CRITICAL":
+                STOP + ESCALATE
+            else:
+                WARN + LOG
+```
+
+### Reference
+
+Full gate specifications in `CASES_AGENTS.md` → "Gates & Rules Scenarios" → "Six Constitutional Gates".
+
+---
+
+## Section G: Non-Goals [CRITICAL]
 
 ### Explicitly Out of Scope
 
@@ -337,7 +373,7 @@ Reconsider non-goals ONLY when:
 
 ---
 
-## Section G: Tag Taxonomy
+## Section H: Tag Taxonomy
 
 ### Prefix Standards
 
@@ -374,7 +410,7 @@ type:decision + status:* → Invalid (decisions are final)
 
 ---
 
-## Section H: Memory-Task Coordination
+## Section I: Memory-Task Coordination
 
 ### Pre-Task Flow
 

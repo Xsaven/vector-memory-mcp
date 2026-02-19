@@ -1517,6 +1517,151 @@ These rules coordinate with Vector Task MCP rules:
 
 ---
 
+### Six Constitutional Gates
+
+Six mandatory gates that protect system integrity. Each gate is a self-contained enforcement point.
+
+---
+
+#### Gate 1: MCP-JSON-ONLY
+
+```
+RULE: ALL MCP calls MUST use JSON-RPC via MCP tools. NEVER direct database/file access.
+WHY: MCP ensures embedding generation, validation, and data integrity.
+TRIGGER: Any memory operation.
+
+ENFORCEMENT:
+  BEFORE: Verify using mcp__vector-memory__*
+  AFTER: If direct access detected → REJECT + escalate
+
+BAD:  sqlite3.connect('./memory/vector_memory.db')
+GOOD: mcp__vector-memory__search_memories({query: "..."})
+```
+
+---
+
+#### Gate 2: Lightweight Lawyer Gate
+
+```
+RULE: ALL proposals MUST pass 5-check verification before storage.
+WHY: Prevents low-quality proposals from polluting memory.
+TRIGGER: Self-improvement proposals, instruction changes.
+
+CHECKLIST:
+  1. Iron Rules: Does NOT violate any → PASS
+  2. Measurable: Has specific metric → PASS
+  3. Reversible: Has rollback plan → PASS
+  4. Scope: Does NOT expand task → PASS
+  5. Security: Does NOT weaken (or improves) → PASS
+
+ENFORCEMENT:
+  IF 5/5 PASS → Store proposal
+  IF security/iron_rules/scope FAIL → REJECT
+  ELSE → CLARIFY
+
+See: "Lightweight Lawyer Gate Scenarios" section for full details.
+```
+
+---
+
+#### Gate 3: Constitutional Learn Protocol
+
+```
+RULE: ALL failures with trigger signals MUST store lessons to memory.
+WHY: Captures failure patterns for future prevention.
+TRIGGER: retries > 0, stuck tag, validation-fix, blocked, user correction.
+
+STEPS:
+  1. Detect trigger signal in task
+  2. Search memory for duplicates
+  3. IF unique → Store with format:
+     FAILURE: {what}
+     ROOT CAUSE: {why}
+     FIX: {how}
+     PREVENTION: {pattern}
+     CONTEXT: Task #{id}
+  4. Link memory ID in task comment
+
+ENFORCEMENT:
+  AFTER task completion: IF trigger detected AND no lesson stored → ESCALATE
+
+See: "Constitutional Learn Protocol Scenarios" section for full details.
+```
+
+---
+
+#### Gate 4: Category Discipline Contract
+
+```
+RULE: Categories are FIXED. NEVER create new categories dynamically.
+WHY: Prevents category drift and search fragmentation.
+TRIGGER: Any memory storage.
+
+ALLOWED CATEGORIES (Memory MCP):
+  code-solution, bug-fix, architecture, learning, debugging,
+  performance, security, project-context, other
+
+ENFORCEMENT:
+  BEFORE storage: IF category not in allowed list → REJECT
+  AFTER storage: IF category mismatch detected → DELETE + re-store
+
+BAD:  store_memory({category: "new-feature", ...})
+GOOD: store_memory({category: "code-solution", ...})
+```
+
+---
+
+#### Gate 5: Cookbook-First Gate
+
+```
+RULE: When uncertain, CALL cookbook() BEFORE assuming or searching elsewhere.
+WHY: Cookbook contains authoritative patterns, tools, and best practices.
+TRIGGER: Uncertainty about tools, patterns, rules, or procedures.
+
+STEPS:
+  1. IF uncertain → mcp__vector-memory__cookbook()
+  2. IF answer found → Apply pattern
+  3. IF not found → THEN search memory/docs/web
+
+ENFORCEMENT:
+  IF question answered by cookbook BUT not called first → WARN
+  IF repeated violations → ESCALATE
+
+PRIORITY ORDER:
+  1. cookbook() - authoritative
+  2. vector memory - context-specific
+  3. external docs - supplementary
+```
+
+---
+
+#### Gate 6: Failure Escalation Gate
+
+```
+RULE: Failures MUST escalate according to severity. NEVER silently continue.
+WHY: Prevents error cascades and ensures visibility.
+TRIGGER: Any failure, error, or unexpected state.
+
+ESCALATION LEVELS:
+
+| Severity | Condition | Action |
+|----------|-----------|--------|
+| CRITICAL | Data loss risk, security breach | STOP + ALERT human immediately |
+| HIGH | System integrity at risk | STOP + Log + Store lesson |
+| MEDIUM | Task failure, retry possible | RETRY (max 3) + Store lesson |
+| LOW | Minor issue, workaround exists | LOG + Continue |
+
+ENFORCEMENT:
+  IF CRITICAL failure AND continued → SEVERE VIOLATION
+  IF retries > 3 AND no escalation → VIOLATION
+  IF lesson stored but no retry/escalation → INCOMPLETE
+
+ESCALATION PATH:
+  Agent → Brain → Human (CRITICAL only)
+```
+
+---
+
 ### Memory-Task Workflow (Cross-MCP)
 
 ```
