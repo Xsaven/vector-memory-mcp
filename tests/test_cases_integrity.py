@@ -64,6 +64,8 @@ def get_expected_categories():
         "standard-search-patterns-reference",
         "tag-taxonomy-reference",
         "non-goals-reference",
+        "workflow",
+        "governance",
     ]
 
 
@@ -174,6 +176,124 @@ class TestCasesIntegrity:
         
         assert "[CRITICAL]" in gates_content, "gates-rules must contain CRITICAL priority rules"
         assert "[HIGH]" in gates_content, "gates-rules must contain HIGH priority rules"
+
+    def test_no_banned_phrases_in_new_categories(self):
+        """New categories (workflow, governance) must not contain uncertainty triggers"""
+        content = CASES_FILE.read_text()
+
+        # Extract only new categories: workflow, governance
+        new_sections = []
+        for section_name in ["Workflow", "Governance"]:
+            match = re.search(
+                rf'^## {section_name}.*?(?=^## |\Z)',
+                content,
+                re.MULTILINE | re.DOTALL
+            )
+            if match:
+                new_sections.append((section_name, match.group(0)))
+
+        banned_patterns = [
+            (r'[Tt]rigger.*[Uu]ncertainty', 'Trigger...Uncertainty'),
+            (r'[Ww]hen uncertain', 'when uncertain'),
+            (r'[Bb]efore assuming', 'before assuming'),
+        ]
+
+        violations = []
+        for section_name, section_content in new_sections:
+            for pattern, label in banned_patterns:
+                matches = re.findall(pattern, section_content)
+                if matches:
+                    violations.append(f"{section_name}: found '{label}' ({len(matches)}x)")
+
+        assert not violations, (
+            f"Banned phrases in new categories:\n"
+            + "\n".join(f"  - {v}" for v in violations)
+            + "\n\nThese phrases are uncertainty triggers banned by Brain governance."
+            + "\n  Use compile-time presets and explicit onViolation instead."
+        )
+
+    def test_mcp_examples_json_syntax(self):
+        """MCP call examples in new categories must use JSON object syntax"""
+        content = CASES_FILE.read_text()
+
+        # Extract workflow and governance sections
+        new_sections = []
+        for section_name in ["Workflow", "Governance"]:
+            match = re.search(
+                rf'^## {section_name}.*?(?=^## |\Z)',
+                content,
+                re.MULTILINE | re.DOTALL
+            )
+            if match:
+                new_sections.append((section_name, match.group(0)))
+
+        violations = []
+        for section_name, section_content in new_sections:
+            # Find all mcp__ calls
+            mcp_calls = re.findall(
+                r'(mcp__[a-z_-]+__[a-z_]+)\(([^)]*)\)',
+                section_content,
+                re.DOTALL
+            )
+            for tool_name, payload in mcp_calls:
+                payload_stripped = payload.strip()
+                if not payload_stripped:
+                    continue  # Empty call (e.g., cookbook()) is valid
+                # Payload must start with { (JSON object)
+                if not payload_stripped.startswith('{'):
+                    violations.append(
+                        f"{section_name}: {tool_name}() payload not JSON object: "
+                        f"'{payload_stripped[:50]}...'"
+                    )
+
+        assert not violations, (
+            f"MCP examples must use JSON object syntax:\n"
+            + "\n".join(f"  - {v}" for v in violations)
+            + "\n\nCorrect: mcp__tool__op({\"key\": \"value\"})"
+            + "\n  Wrong: mcp__tool__op(key=\"value\")"
+        )
+
+    def test_workflow_has_verification_step(self):
+        """Workflow category must contain verification/confirm pattern"""
+        content = CASES_FILE.read_text()
+
+        workflow_match = re.search(
+            r'^## Workflow.*?(?=^## |\Z)',
+            content,
+            re.MULTILINE | re.DOTALL
+        )
+
+        assert workflow_match, "Workflow section not found in CASES_AGENTS.md"
+
+        workflow_content = workflow_match.group(0)
+
+        assert re.search(r'[Vv]erif', workflow_content), (
+            "Workflow section must contain verification step (verify/verified/verification)"
+        )
+        assert re.search(r'[Cc]onfirm', workflow_content), (
+            "Workflow section must contain confirmation step (confirm/confirmed)"
+        )
+
+    def test_governance_has_iron_rule_reference(self):
+        """Governance category must reference iron rules"""
+        content = CASES_FILE.read_text()
+
+        governance_match = re.search(
+            r'^## Governance.*?(?=^## |\Z)',
+            content,
+            re.MULTILINE | re.DOTALL
+        )
+
+        assert governance_match, "Governance section not found in CASES_AGENTS.md"
+
+        governance_content = governance_match.group(0)
+
+        assert "iron rule" in governance_content.lower(), (
+            "Governance section must reference iron rules"
+        )
+        assert "compile-time" in governance_content.lower(), (
+            "Governance section must reference compile-time constraints"
+        )
 
 
 if __name__ == "__main__":

@@ -25,6 +25,8 @@ MUST research context: 1) existing tasks (duplicates?), 2) vector memory (prior 
 
 ## Docs-are-law (CRITICAL)
 Documentation is the SINGLE SOURCE OF TRUTH. If docs exist for task - FOLLOW THEM EXACTLY. No deviations, no "alternatives", no "options" that docs don't mention.
+SCENARIO(Docs say "use Repository pattern". Existing code uses Service pattern. → Follow docs (Repository), not existing code.)
+SCENARIO(Docs describe feature but skip error handling details. → Follow docs for main flow, use conservative approach for undocumented edge cases.)
 - **why**: User wrote docs for a reason. Asking about non-existent alternatives wastes time and shows you didn't read the docs.
 - **on_violation**: Re-read documentation. Execute ONLY what docs specify.
 
@@ -55,6 +57,11 @@ NEVER search docs with single exact query. Generate 3-5 keyword variations: 1) s
 BEFORE implementing: search codebase for similar/analogous implementations. Grep for: similar class names, method signatures, trait usage, helper utilities. Found → REUSE approach, follow same patterns, extend existing code. Not found → proceed independently. NEVER reinvent what already exists in the project.
 - **why**: Codebase consistency > personal style. Duplicate implementations create maintenance burden, inconsistency, and confusion. Existing patterns are battle-`tested`.
 - **on_violation**: STOP. Search codebase for analogous code. Found → study and follow the pattern. Only then proceed.
+
+## Impact-radius-analysis (CRITICAL)
+BEFORE editing any file: check WHO DEPENDS on it. Grep for imports/use/require/extends/implements of target file. Dependents found → plan changes to not break them. Changing public method/function signature → update ALL callers or flag as breaking change.
+- **why**: Changing code without knowing its consumers causes cascade failures. Proactive impact analysis prevents breaking downstream code.
+- **on_violation**: STOP. Grep for reverse dependencies of target file. Assess impact BEFORE editing.
 
 ## Docs-define-task-scope (CRITICAL)
 If documentation exists for task domain → task.content MUST reference docs. Estimate based on FULL spec from docs, not brief description.
@@ -119,13 +126,15 @@ Check transitive dependencies: if task A modifies file X, and file X is imported
 
 ## Task-tags-predefined-only (CRITICAL)
 Task tags MUST use ONLY predefined values. FORBIDDEN: inventing new tags, synonyms, variations. Allowed: decomposed, validation-fix, blocked, stuck, needs-research, light-validation, parallel-safe, atomic, manual-only, regression, feature, bugfix, refactor, research, docs, test, chore, spike, hotfix, backend, frontend, database, api, auth, ui, config, infra, ci-cd, migration, strict:relaxed, strict:standard, strict:strict, strict:paranoid, cognitive:minimal, cognitive:standard, cognitive:deep, cognitive:exhaustive, batch:trivial.
-- **why**: Ad-hoc tags cause explosion ("user-auth", "authentication", "auth" = same thing, search finds none). Predefined list = consistent search.
-- **on_violation**: Replace with closest predefined match. No match = skip tag, put context in content.
+SCENARIO(Project with 30 modules needs per-module filtering → use CUSTOM_TASK_TAGS in .env for project-specific tags, not 30 new constants in core.)
+SCENARIO(Task about "user login flow" → tag: auth (NOT: login, authentication, user-auth). MCP normalizes at storage, but use canonical form at reasoning time.)
+- **why**: Ad-hoc tags cause tag explosion ("user-auth", "authentication", "auth" = same concept, search finds none). Predefined list = consistent search. MCP normalizes aliases at storage layer, but reasoning-time canonical usage prevents drift.
+- **on_violation**: Normalize via NOT-list (e.g. authentication→auth, db→database). No canonical match → skip tag, put context in task content. Silent fix, no memory storage.
 
 ## Memory-tags-predefined-only (CRITICAL)
 Memory tags MUST use ONLY predefined values. Allowed: pattern, solution, `failure`, decision, insight, workaround, deprecated, project-wide, module-specific, temporary, reusable.
-- **why**: Unknown tags = unsearchable memories. Predefined = discoverable.
-- **on_violation**: Replace with closest predefined match.
+- **why**: Unknown tags = unsearchable memories. Predefined = discoverable. MCP normalizes at storage, but use canonical form at reasoning time.
+- **on_violation**: Normalize to closest canonical tag. No match → skip tag.
 
 ## Memory-categories-predefined-only (CRITICAL)
 Memory category MUST be one of: code-solution, bug-fix, architecture, learning, debugging, performance, security, project-context. FORBIDDEN: "other", "general", "misc", or unlisted.
@@ -139,11 +148,15 @@ EVERY task MUST have exactly ONE strict:* tag AND ONE cognitive:* tag. Allowed s
 
 ## Safety-escalation-non-overridable (CRITICAL)
 After loading task, check file paths in task.content/comment. If files match safety patterns → effective level MUST be >= pattern minimum, regardless of task tags or .env default. Agent tags are suggestions UPWARD only — can raise above safety floor, never lower below it.
+SCENARIO(Task tagged strict:relaxed touches auth/guards/LoginController.php → escalate to strict:strict minimum regardless of tag.)
+SCENARIO(Simple rename across 12 files → cognitive escalates to standard (>10 files rule), strict stays as tagged.)
 - **why**: Safety patterns guarantee minimum protection for critical code areas. Agent cannot "cheat" by under-tagging a task touching auth/ or payments/.
 - **on_violation**: Raise effective level to safety floor. Log escalation in task comment.
 
 ## Batch-trivial-grouping (HIGH)
 When ALL items are: identical operation (rename, format, move) + trivial (<5 min each, no logic change) + independent (no cross-file dependencies) → create 1 task with checklist, tags: [batch:trivial, strict:relaxed, cognitive:minimal]. Do NOT decompose into separate subtasks.
+SCENARIO(Rename 5 CSS classes across 5 files → single task with checklist (identical, trivial, independent).)
+SCENARIO(Update 5 service classes with different logic each → NOT batch (different logic = not identical operation). Decompose into separate tasks.)
 - **why**: Trivial batch operations gain nothing from parallelism. 5 identical tasks waste 5x planning overhead.
 - **on_violation**: Evaluate if items are truly independent and trivial. If yes → single task with checklist.
 
@@ -155,23 +168,31 @@ Task content SHOULD include expected file scope: "FILES: [file1.php, file2.php, 
 
 # Aggressive docs search
 GOAL(Find documentation even if named differently than task/code)
-- `1`: Generate keyword variations from task title/content:
-- `2`:   1. Original: "FocusModeTest" → search "FocusModeTest"
-- `3`:   2. Split CamelCase: "FocusModeTest" → search "FocusMode", "Focus Mode"
-- `4`:   3. Remove suffix: "FocusModeTest" → search "Focus" (remove Mode, Test)
-- `5`:   4. Domain words: extract meaningful nouns → search each
-- `6`:   5. Parent context: if task has parent → include parent title keywords
-- `7`: Common suffixes to STRIP: Test, Tests, Controller, Service, Repository, Command, Handler, Provider, Factory, Manager, Helper, Validator, Processor
-- `8`: Search ORDER: most specific → most general. STOP when found.
-- `9`: Minimum 3 search attempts before concluding "no documentation".
-- `10`: WRONG: brain docs "UserAuthenticationServiceTest" → not found → done
-- `11`: RIGHT: brain docs "UserAuthenticationServiceTest" → not found → brain docs "UserAuthentication" → not found → brain docs "Authentication" → FOUND!
+- `1`: Generate 3-5 keyword variations: split CamelCase, strip suffixes (Test, Controller, Service, Repository, Handler), extract domain words, try parent context keywords
+- `2`: Search ORDER: most specific → most general. Minimum 3 attempts before concluding "no docs"
+- `3`: WRONG: brain docs "UserAuthServiceTest" → not found → done
+- `4`: RIGHT: brain docs "UserAuthServiceTest" → brain docs "UserAuth" → brain docs "Authentication" → FOUND!
+- `5`: STILL not found after 3+ attempts? → brain docs --undocumented → check if class exists but lacks documentation
+
+# Parallel isolation checklist
+GOAL(Systematic verification of task independence before setting parallel: true)
+- `1`: For EACH pair of tasks being considered for parallel execution:
+- `2`:   1. FILE MANIFEST: List ALL files each task will read/write/create
+- `3`:   2. FILE OVERLAP: Cross-reference manifests → shared file = parallel: false for BOTH
+- `4`:   3. IMPORT CHAIN: Check if any file in task A imports/uses files from task B scope (and vice versa)
+- `5`:   4. SHARED MODEL: Check if tasks modify same DB table, model, or migration
+- `6`:   5. SHARED CONFIG: Check if tasks modify same config key, .env variable, or shared state
+- `7`:   6. OUTPUT→INPUT: Check if task B needs any result/artifact/output from task A
+- `8`:   7. TRANSITIVE: Follow imports one level deep — indirect overlap = NOT independent
+- `9`:   8. GLOBAL BLACKLIST: If ANY task modifies globally shared files (dependency manifests/locks, .env*, config/**, routes/**, migration directories, CI/CD configs, test/lint/build configs) → that task MUST be parallel: false. Globally shared files are NEVER safe for parallel modification.
+- `10`:   RESULT: ALL checks pass → parallel: true | ANY check fails → parallel: false
+- `11`:   DEFAULT: When analysis is uncertain or incomplete → parallel: false (safe default)
 
 # Task tag selection
 GOAL(Select tags per task. Combine dimensions for precision.)
 WORKFLOW (pipeline stage): decomposed, validation-fix, blocked, stuck, needs-research, light-validation, parallel-safe, atomic, manual-only, regression
-TYPE (work kind): feature, bugfix, refactor, research, docs, test, chore, spike, hotfix
-DOMAIN (area): backend, frontend, database, api, auth, ui, config, infra, ci-cd, migration
+TYPE (work kind): feature (NOT: feat, enhancement), bugfix (NOT: fix, bug), refactor (NOT: refactoring, cleanup), research, docs (NOT: documentation), test (NOT: testing, tests), chore (NOT: maintenance), spike, hotfix
+DOMAIN (area): backend, frontend, database (NOT: db, mysql, postgres, sqlite), api (NOT: rest, graphql, endpoint), auth (NOT: authentication, authorization, login, authn, authz), ui, config, infra (NOT: docker, deploy, server), ci-cd (NOT: github-actions, pipeline), migration (NOT: schema, migrate)
 STRICT LEVEL: strict:relaxed, strict:standard, strict:strict, strict:paranoid
 COGNITIVE LEVEL: cognitive:minimal, cognitive:standard, cognitive:deep, cognitive:exhaustive
 BATCH: batch:trivial
@@ -189,12 +210,12 @@ File patterns → strict minimum: auth/, guards/, policies/, permissions/ → st
 Context patterns → level minimum: priority=critical → strict+deep. tag hotfix or production → strict+standard. touches >10 files → standard+standard. tag breaking-change → strict+deep. Keywords security/encryption/auth/permission → strict. Keywords migration/schema/database/drop → strict.
 
 # Cognitive level
-GOAL(Cognitive level: standard — calibrate analysis depth accordingly)
-Memory probes per phase: 2-3 targeted
-Failure history: recent only
-Research (context7/web): on error/ambiguity
-Agent scaling: auto (2-3)
-Comment parsing: basic parse
+GOAL(Cognitive level: exhaustive — calibrate analysis depth accordingly)
+Memory probes per phase: 5+ cross-referenced
+Failure history: full + pattern analysis
+Research (context7/web): always + cross-reference
+Agent scaling: maximum (4+)
+Comment parsing: parse + validate
 
 # Input
 STORE-AS($RAW_INPUT = $ARGUMENTS)

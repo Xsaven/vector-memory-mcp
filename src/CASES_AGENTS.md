@@ -1354,6 +1354,167 @@ Priority (keeps first):
 ---
 ---
 
+## Workflow Scenarios
+<!-- description: Multi-step MCP operation sequences with verification. Store-then-verify, search-then-act patterns. -->
+
+### Store-Then-Verify
+
+After storing a memory, immediately search to verify storage succeeded. Prevents silent store failures.
+
+**Priority:** HIGH
+
+```python
+# Step 1: Store the memory
+result = mcp__vector-memory__store_memory({
+    "content": "UserController N+1 fix: use ->with('roles') for eager loading. Pattern: always eager load relationships accessed in loops.",
+    "tags": ["code-solution", "laravel", "performance"],
+    "category": "code-solution"
+})
+
+# Step 2: Verify by searching for key content
+verify = mcp__vector-memory__search_memories({
+    "query": "UserController N+1 eager loading roles",
+    "limit": 1
+})
+
+# Step 3: Confirm match
+# verify.results[0].similarity >= 0.85 → store confirmed
+# verify.results empty or low similarity → store may have failed silently
+```
+
+**When to use:**
+- After storing critical architecture decisions
+- After storing security patterns or failure lessons
+- When memory_store returns success but downstream operations depend on persistence
+
+**Iron rule alignment:**
+- `search-before-store` (HIGH): mandates search before store to prevent duplicates
+- This pattern adds POST-store verification for critical writes
+- Combined flow: search (dedup check) → store → search (verify)
+
+**Governance:** Uses compile-time preset. No additional cookbook pulls needed.
+
+---
+
+### Verify-After-Bulk-Store
+
+For batch operations: store multiple memories, then verify a sample.
+
+```python
+# Store 3 related memories
+mcp__vector-memory__store_memory({
+    "content": "Auth flow step 1: JWT token validation in middleware",
+    "tags": ["architecture", "auth"],
+    "category": "architecture"
+})
+mcp__vector-memory__store_memory({
+    "content": "Auth flow step 2: refresh token rotation policy",
+    "tags": ["architecture", "auth"],
+    "category": "architecture"
+})
+mcp__vector-memory__store_memory({
+    "content": "Auth flow step 3: session invalidation on password change",
+    "tags": ["architecture", "auth"],
+    "category": "architecture"
+})
+
+# Verify sample (1 search covers all 3 via tag overlap)
+mcp__vector-memory__search_memories({
+    "query": "auth flow JWT refresh session",
+    "limit": 3
+})
+# Expect: 3 results with similarity >= 0.80
+```
+
+---
+---
+
+## Governance Scenarios
+<!-- description: Policy enforcement during MCP operations. Budget limits, iron rule compliance, compile-time constraints. -->
+
+### Search Budget Enforcement
+
+Brain is limited to 3 vector memory searches per operation (iron rule: `memory-limit`, severity: MEDIUM). Track search count in context and stop before exceeding.
+
+**Priority:** HIGH
+
+```python
+# Budget: max 3 searches per operation
+# Track: increment after each search call
+
+# Search 1/3
+mcp__vector-memory__search_memories({
+    "query": "authentication flow JWT",
+    "limit": 3
+})
+
+# Search 2/3
+mcp__vector-memory__search_memories({
+    "query": "token refresh middleware",
+    "limit": 3
+})
+
+# Search 3/3 — LAST ALLOWED
+mcp__vector-memory__search_memories({
+    "query": "auth error handling patterns",
+    "limit": 3
+})
+
+# Search 4 — BLOCKED by iron rule memory-limit
+# Do NOT execute. Proceed with results from searches 1-3.
+```
+
+**Enforcement rules:**
+- Count starts at 0 for each new operation/delegation
+- Each `mcp__vector-memory__search_memories` call increments by 1
+- At count >= 3: STOP. Use existing results.
+- Cookbook pulls do NOT count toward search budget (different tool)
+- Iron rule `memory-limit` severity: MEDIUM — proceed without additional searches
+
+**Compile-time preset alignment:** This governance is enforced by Brain's compiled iron rule, not by runtime configuration. No runtime self-modification allowed.
+
+---
+
+### Multi-Probe Within Budget
+
+How to maximize information from 3 allowed searches.
+
+```python
+# Strategy: each search targets a DIFFERENT facet
+# DO NOT repeat similar queries — wastes budget
+
+# Search 1: specific technical term
+mcp__vector-memory__search_memories({
+    "query": "N+1 query eager loading with()",
+    "limit": 5
+})
+
+# Search 2: broader architectural context
+mcp__vector-memory__search_memories({
+    "query": "database performance optimization patterns",
+    "limit": 5
+})
+
+# Search 3: related failure patterns
+mcp__vector-memory__search_memories({
+    "query": "slow query timeout production incident",
+    "limit": 5
+})
+
+# Now synthesize from all 3 result sets. No more searches allowed.
+```
+
+**Anti-pattern:**
+```python
+# BAD: wasting budget on overlapping queries
+mcp__vector-memory__search_memories({"query": "database optimization", "limit": 3})
+mcp__vector-memory__search_memories({"query": "DB optimization patterns", "limit": 3})
+# These overlap ~80%. Second search wasted budget.
+```
+
+---
+---
+
 ## Gates Rules Scenarios
 <!-- description: CRITICAL and HIGH priority rules. MCP-only, multi-probe, search-before-store. -->
 
