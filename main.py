@@ -482,6 +482,123 @@ def create_server() -> FastMCP:
             }
 
     @mcp.tool()
+    async def tag_normalize_preview(
+        threshold: float = 0.90,
+        max_changes: int = 200
+    ) -> dict[str, Any]:
+        """
+        Preview tag normalization without applying changes.
+
+        Scans all memories and identifies tags that can be merged into
+        existing canonical tags based on semantic similarity with guards.
+
+        Returns a deterministic preview_id (same state = same ID).
+        No database modifications are made.
+
+        Args:
+            threshold: Minimum cosine similarity for merging (0.0-1.0, default 0.90)
+            max_changes: Maximum number of tag mappings to propose (default 200)
+        """
+        try:
+            await memory_store._ensure_db_initialized_async()
+            model = await memory_store.get_embedding_model_async()
+            result = memory_store.tag_normalize_preview(threshold, max_changes, embedding_model=model)
+            return result
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "Preview failed",
+                "message": str(e)
+            }
+
+    @mcp.tool()
+    async def tag_normalize_apply(
+        preview_id: str,
+        snapshot_id: str,
+        threshold: float = 0.90,
+        max_changes: int = 200
+    ) -> dict[str, Any]:
+        """
+        Apply tag normalization. Requires both preview_id and snapshot_id.
+
+        Safety requirements:
+        - snapshot_id must exist (created via snapshot_create) for rollback
+        - preview_id must match current state (no drift since preview)
+
+        Only modifies tags in memory_metadata. Content and embeddings
+        are NOT changed — this is a tags-only operation.
+
+        Args:
+            preview_id: ID from tag_normalize_preview (ensures no state drift)
+            snapshot_id: ID from snapshot_create (ensures rollback is possible)
+            threshold: Must match the threshold used in preview (default 0.90)
+            max_changes: Must match max_changes used in preview (default 200)
+        """
+        try:
+            await memory_store._ensure_db_initialized_async()
+            model = await memory_store.get_embedding_model_async()
+            result = memory_store.tag_normalize_apply(
+                preview_id, snapshot_id, threshold, max_changes, embedding_model=model
+            )
+            return result
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "Apply failed",
+                "message": str(e)
+            }
+
+    @mcp.tool()
+    async def snapshot_create(
+        description: str = ""
+    ) -> dict[str, Any]:
+        """
+        Create a snapshot of current memory tags for rollback safety.
+
+        Captures memory_id → tags mapping for all memories.
+        Required before running tag_normalize_apply.
+
+        The snapshot_id is a deterministic hash of the current tag state.
+
+        Args:
+            description: Optional human-readable description of the snapshot
+        """
+        try:
+            await memory_store._ensure_db_initialized_async()
+            result = memory_store.snapshot_create(description)
+            return result
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "Snapshot creation failed",
+                "message": str(e)
+            }
+
+    @mcp.tool()
+    async def snapshot_restore(
+        snapshot_id: str
+    ) -> dict[str, Any]:
+        """
+        Restore memory tags from a previously created snapshot.
+
+        Only modifies tags — content and embeddings are untouched.
+        Use this to rollback after tag_normalize_apply if needed.
+
+        Args:
+            snapshot_id: ID of the snapshot to restore (from snapshot_create)
+        """
+        try:
+            await memory_store._ensure_db_initialized_async()
+            result = memory_store.snapshot_restore(snapshot_id)
+            return result
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "Restore failed",
+                "message": str(e)
+            }
+
+    @mcp.tool()
     async def cookbook(
         level: int = 0,
         include: str = "init",

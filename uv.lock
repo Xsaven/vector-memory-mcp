@@ -1790,7 +1790,7 @@ wheels = [
 
 [[package]]
 name = "vector-memory-mcp"
-version = "1.9.3"
+version = "1.10.0"
 source = { editable = "." }
 dependencies = [
     { name = "mcp" },

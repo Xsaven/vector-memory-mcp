@@ -7,6 +7,7 @@ Handles database initialization, memory storage, search, and management.
 """
 
 import asyncio
+import hashlib
 import sqlite3
 import sqlite_vec
 import json
@@ -332,6 +333,18 @@ class VectorMemoryStore:
                     tag TEXT PRIMARY KEY,
                     embedding BLOB NOT NULL,
                     frequency INTEGER DEFAULT 1,
+                    created_at TEXT NOT NULL
+                )
+            """)
+
+            # Create tag snapshots table for rollback safety
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS tag_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    snapshot_id TEXT UNIQUE NOT NULL,
+                    description TEXT DEFAULT '',
+                    memory_count INTEGER NOT NULL,
+                    tag_data TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 )
             """)
@@ -1216,7 +1229,7 @@ class VectorMemoryStore:
     def get_tag_weights(self) -> Dict[str, float]:
         """
         Get IDF-based weights for all canonical tags.
-        
+
         Weight formula: 1 / log(1 + frequency)
         - High frequency tags (common) → lower weight (less discriminative)
         - Low frequency tags (rare) → higher weight (more discriminative)
@@ -1236,5 +1249,391 @@ class VectorMemoryStore:
 
         except Exception as e:
             raise RuntimeError(f"Failed to get tag weights: {e}")
+        finally:
+            conn.close()
+
+    # =========================================================================
+    # Tag Normalization: Snapshot / Preview / Apply / Restore
+    # =========================================================================
+
+    def snapshot_create(self, description: str = "") -> Dict[str, Any]:
+        """
+        Create a snapshot of current memory tags for rollback safety.
+
+        Captures memory_id → tags mapping for all memories.
+        Snapshot ID is a deterministic hash of the tag state.
+
+        Args:
+            description: Optional human-readable description
+
+        Returns:
+            Dict with snapshot_id, memory_count, created_at
+        """
+        self._ensure_db_initialized_sync()
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT id, tags FROM memory_metadata ORDER BY id"
+            ).fetchall()
+
+            tag_data = {}
+            for row in rows:
+                tag_data[str(row[0])] = json.loads(row[1]) if row[1] else []
+
+            snapshot_id = hashlib.sha256(
+                json.dumps(tag_data, sort_keys=True).encode()
+            ).hexdigest()[:16]
+
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute("""
+                INSERT OR REPLACE INTO tag_snapshots
+                (snapshot_id, description, memory_count, tag_data, created_at)
+                VALUES (?, ?, ?, ?, ?)
+            """, (snapshot_id, description, len(tag_data), json.dumps(tag_data), now))
+            conn.commit()
+
+            return {
+                "success": True,
+                "snapshot_id": snapshot_id,
+                "memory_count": len(tag_data),
+                "created_at": now
+            }
+        except Exception as e:
+            conn.rollback()
+            raise RuntimeError(f"Failed to create snapshot: {e}")
+        finally:
+            conn.close()
+
+    def snapshot_restore(self, snapshot_id: str) -> Dict[str, Any]:
+        """
+        Restore memory tags from a previously created snapshot.
+
+        Only modifies tags — content and embeddings are untouched.
+
+        Args:
+            snapshot_id: ID of the snapshot to restore
+
+        Returns:
+            Dict with restored_count and status
+        """
+        self._ensure_db_initialized_sync()
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                "SELECT tag_data, memory_count FROM tag_snapshots WHERE snapshot_id = ?",
+                (snapshot_id,)
+            ).fetchone()
+
+            if not row:
+                return {
+                    "success": False,
+                    "error": "Snapshot not found",
+                    "message": f"snapshot_id '{snapshot_id}' does not exist"
+                }
+
+            tag_data = json.loads(row[0])
+            now = datetime.now(timezone.utc).isoformat()
+            restored = 0
+
+            for memory_id_str, tags in tag_data.items():
+                memory_id = int(memory_id_str)
+                conn.execute(
+                    "UPDATE memory_metadata SET tags = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(tags), now, memory_id)
+                )
+                restored += 1
+
+            conn.commit()
+
+            return {
+                "success": True,
+                "snapshot_id": snapshot_id,
+                "restored_count": restored,
+                "message": f"Restored tags for {restored} memories"
+            }
+        except Exception as e:
+            conn.rollback()
+            raise RuntimeError(f"Failed to restore snapshot: {e}")
+        finally:
+            conn.close()
+
+    def _compute_tag_normalization(
+        self,
+        threshold: float,
+        max_changes: int,
+        model: 'EmbeddingModel',
+        conn: sqlite3.Connection
+    ) -> Dict[str, Any]:
+        """
+        Compute tag normalization mapping (internal, does not modify DB).
+
+        For each non-canonical tag in memory_metadata, finds the best
+        matching canonical tag using semantic similarity with guards.
+
+        Args:
+            threshold: Minimum similarity for merging
+            max_changes: Maximum number of tag mappings to propose
+            model: Embedding model
+            conn: Database connection
+
+        Returns:
+            Dict with mapping, stats, and preview_id
+        """
+        canonical_tags = self._get_canonical_tags(conn)
+
+        rows = conn.execute(
+            "SELECT id, tags FROM memory_metadata ORDER BY id"
+        ).fetchall()
+
+        # Collect tag → memory_ids
+        tag_usage: Dict[str, List[int]] = {}
+        for row in rows:
+            memory_id = row[0]
+            tags = json.loads(row[1]) if row[1] else []
+            for tag in tags:
+                if tag not in tag_usage:
+                    tag_usage[tag] = []
+                tag_usage[tag].append(memory_id)
+
+        # Build mapping: old_tag → canonical_tag
+        mapping: Dict[str, str] = {}
+        canonical_set = set(canonical_tags.keys())
+
+        if canonical_tags:
+            canonical_list = list(canonical_tags.keys())
+
+            for tag in sorted(tag_usage.keys()):
+                if tag in canonical_set:
+                    continue  # Already canonical
+
+                tag_normalized = _normalize_tag_for_embedding(tag)
+                similarities = model.batch_similarity(tag_normalized, canonical_list)
+
+                best_match = None
+                best_sim = 0.0
+
+                for i, sim in enumerate(similarities):
+                    can_tag = canonical_list[i]
+                    if sim >= threshold and _can_merge_tags(
+                        tag_normalized, _normalize_tag_for_embedding(can_tag), sim
+                    ):
+                        if sim > best_sim:
+                            best_sim = sim
+                            best_match = can_tag
+
+                if best_match and best_match != tag:
+                    mapping[tag] = best_match
+                    if len(mapping) >= max_changes:
+                        break
+
+        # Deterministic preview_id
+        preview_id = hashlib.sha256(
+            json.dumps(mapping, sort_keys=True).encode()
+        ).hexdigest()[:16]
+
+        # Stats
+        unique_tags_before = len(tag_usage)
+        tags_after_set = set()
+        for tag in tag_usage:
+            tags_after_set.add(mapping.get(tag, tag))
+        unique_tags_after = len(tags_after_set)
+
+        affected_memories = set()
+        for old_tag in mapping:
+            affected_memories.update(tag_usage.get(old_tag, []))
+
+        # Changes sorted by frequency (most impactful first)
+        changes = []
+        for old_tag, new_tag in sorted(
+            mapping.items(),
+            key=lambda x: len(tag_usage.get(x[0], [])),
+            reverse=True
+        ):
+            changes.append({
+                "from": old_tag,
+                "to": new_tag,
+                "affected_memories": len(tag_usage.get(old_tag, []))
+            })
+
+        return {
+            "mapping": mapping,
+            "preview_id": preview_id,
+            "total_memories_scanned": len(rows),
+            "unique_tags_before": unique_tags_before,
+            "unique_tags_after": unique_tags_after,
+            "planned_updates_count": len(mapping),
+            "affected_memories_count": len(affected_memories),
+            "changes": changes,
+            "threshold": threshold,
+        }
+
+    def tag_normalize_preview(
+        self,
+        threshold: float = 0.90,
+        max_changes: int = 200,
+        embedding_model: Optional['EmbeddingModel'] = None
+    ) -> Dict[str, Any]:
+        """
+        Preview tag normalization without applying changes.
+
+        Scans all memories and identifies tags that can be merged
+        into existing canonical tags based on semantic similarity.
+
+        Args:
+            threshold: Minimum cosine similarity for merging (default 0.90)
+            max_changes: Maximum number of tag mappings (default 200)
+            embedding_model: Optional pre-loaded embedding model
+
+        Returns:
+            Dict with preview_id, proposed changes, and stats
+        """
+        self._ensure_db_initialized_sync()
+        model = embedding_model or self._get_embedding_model_sync()
+        conn = self._get_connection()
+        try:
+            result = self._compute_tag_normalization(threshold, max_changes, model, conn)
+            return {
+                "success": True,
+                "preview_id": result["preview_id"],
+                "total_memories_scanned": result["total_memories_scanned"],
+                "unique_tags_before": result["unique_tags_before"],
+                "unique_tags_after": result["unique_tags_after"],
+                "planned_updates_count": result["planned_updates_count"],
+                "affected_memories_count": result["affected_memories_count"],
+                "changes": result["changes"][:20],  # Top 20 for display
+                "threshold": result["threshold"],
+            }
+        except Exception as e:
+            raise RuntimeError(f"Failed to preview tag normalization: {e}")
+        finally:
+            conn.close()
+
+    def tag_normalize_apply(
+        self,
+        preview_id: str,
+        snapshot_id: str,
+        threshold: float = 0.90,
+        max_changes: int = 200,
+        embedding_model: Optional['EmbeddingModel'] = None
+    ) -> Dict[str, Any]:
+        """
+        Apply tag normalization. Requires snapshot_id for rollback safety.
+
+        Verifies that:
+        1. The snapshot exists (rollback is possible)
+        2. The preview_id matches current state (no drift since preview)
+        3. There are actual changes to apply
+
+        Only modifies tags in memory_metadata. Content and embeddings
+        are NOT changed — this is a tags-only operation.
+
+        Args:
+            preview_id: ID from tag_normalize_preview (drift check)
+            snapshot_id: ID from snapshot_create (rollback safety)
+            threshold: Minimum cosine similarity (must match preview)
+            max_changes: Maximum tag mappings (must match preview)
+            embedding_model: Optional pre-loaded embedding model
+
+        Returns:
+            Dict with applied counts and status
+        """
+        self._ensure_db_initialized_sync()
+
+        # Step 1: Verify snapshot exists
+        conn = self._get_connection()
+        try:
+            snapshot = conn.execute(
+                "SELECT 1 FROM tag_snapshots WHERE snapshot_id = ?",
+                (snapshot_id,)
+            ).fetchone()
+            if not snapshot:
+                return {
+                    "success": False,
+                    "error": "Snapshot not found",
+                    "message": f"snapshot_id '{snapshot_id}' does not exist. "
+                               f"Create a snapshot before applying normalization."
+                }
+        finally:
+            conn.close()
+
+        # Step 2: Compute mapping and verify preview_id
+        model = embedding_model or self._get_embedding_model_sync()
+        conn = self._get_connection()
+        try:
+            result = self._compute_tag_normalization(threshold, max_changes, model, conn)
+
+            if result["preview_id"] != preview_id:
+                return {
+                    "success": False,
+                    "error": "Preview ID mismatch",
+                    "message": "State has changed since preview was generated. "
+                               "Run tag_normalize_preview again.",
+                    "expected": result["preview_id"],
+                    "provided": preview_id
+                }
+
+            mapping = result["mapping"]
+            if not mapping:
+                return {
+                    "success": True,
+                    "applied_count": 0,
+                    "memories_updated": 0,
+                    "tags_replaced": 0,
+                    "message": "No tags need normalization"
+                }
+
+            # Step 3: Apply changes atomically
+            rows = conn.execute(
+                "SELECT id, tags FROM memory_metadata ORDER BY id"
+            ).fetchall()
+
+            now = datetime.now(timezone.utc).isoformat()
+            updated_count = 0
+            tags_replaced = 0
+
+            for row in rows:
+                memory_id = row[0]
+                tags = json.loads(row[1]) if row[1] else []
+                new_tags = []
+                changed = False
+
+                for tag in tags:
+                    if tag in mapping:
+                        new_tag = mapping[tag]
+                        if new_tag not in new_tags:
+                            new_tags.append(new_tag)
+                        tags_replaced += 1
+                        changed = True
+                    elif tag not in new_tags:
+                        new_tags.append(tag)
+
+                if changed:
+                    conn.execute(
+                        "UPDATE memory_metadata SET tags = ?, updated_at = ? WHERE id = ?",
+                        (json.dumps(new_tags), now, memory_id)
+                    )
+                    updated_count += 1
+
+            conn.commit()
+
+            # Final unique tag count
+            all_tags = set()
+            for r in conn.execute("SELECT tags FROM memory_metadata").fetchall():
+                for t in json.loads(r[0]) if r[0] else []:
+                    all_tags.add(t)
+
+            return {
+                "success": True,
+                "preview_id": preview_id,
+                "snapshot_id": snapshot_id,
+                "memories_updated": updated_count,
+                "tags_replaced": tags_replaced,
+                "unique_tags_after": len(all_tags),
+                "message": f"Applied {tags_replaced} tag replacements "
+                           f"across {updated_count} memories"
+            }
+        except Exception as e:
+            conn.rollback()
+            raise RuntimeError(f"Failed to apply tag normalization: {e}")
         finally:
             conn.close()
